@@ -1,0 +1,71 @@
+#!/bin/bash
+## Normalization and conversion *.mp3 to *.ogg
+## Req: bash, hash, grep, ffmpeg, /proc/cpuinfo (for smp)
+## Use: ./normnconv or ./normnconv "what" or ./normnconv "what" "where" or ./normnconv "" "where"
+## Author Andrew S.
+## Licence GPL
+## https://github.com/quarkscript/Normalization-of-sound-files.git
+
+if [ ! -z "$1" ]
+    then 
+    flst=$1
+else
+    flst='*.mp3'
+fi
+if [ ! -z "$2" ]
+    then 
+    cd $2
+fi
+
+normalization_and_conversion() { 
+vol_test=$(ffmpeg -i "$1" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume)
+upper10=$(echo $vol_test | grep -o -E "\-[0-9][0-9]\.[0-9]" | grep -o -E "[0-9][0-9]\.[0-9]")
+lower10=$(echo $vol_test | grep -o -E "\-[0-9]\.[0-9]" | grep -o -E "[0-9]\.[0-9]")
+if [ ! "$upper10" == "" ]
+    then
+    lvlup="-af volume=$upper10'dB'"
+elif [ ! "$lower10" == "" ] 
+    then
+    lvlup="-af volume=$lower10'dB'"
+else
+    lvlup=''
+fi
+## aq - quality, 10 is max
+ffmpeg -i "$1" -acodec libvorbis -aq 9 -ar 44100 $lvlup "${1%.*}.ogg" 
+#ffmpeg -i "$1" -acodec libopus -b:a 320k $lvlup "${1%.*}.ogg" 
+}
+
+if hash ffmpeg 2>/dev/null
+    then
+## single processor
+## -------------------------------------------------------------#
+#     for i in $flst                                            #
+#        do                                                     #
+#           normalization_and_conversion "$i"                   #
+#     done                                                      #
+## -------------------------------------------------------------#
+
+## smp
+## -------------------------------------------------------------#
+    threads=$(($(grep 'model name' /proc/cpuinfo --count)+0))   #
+    count=0                                                     #
+    for i in $flst                                              #
+        do                                                      #
+            normalization_and_conversion "$i" &                 #
+            count=$(($count+1))                                 #
+            if [ "$count" == "$threads" ]                       #
+                then                                            #
+                wait                                            #
+                count=0                                         #
+            fi                                                  #
+    done                                                        #
+    wait                                                        #
+## -------------------------------------------------------------#
+    mkdir normalized
+    mv *.ogg normalized/
+else
+    echo ----------------
+    echo ffmpeg not found 
+    echo normalization and/or conversion not possible
+    echo ----------------
+fi
