@@ -4,7 +4,7 @@
 ## Use: ./normnconv or ./normnconv "what" or ./normnconv "what" "where" or ./normnconv "" "where"
 ## Author Andrew S.
 ## Licence GPL
-## https://github.com/quarkscript/Normalization-of-sound-files
+## https://github.com/quarkscript/media_works
 
 if [ ! -z "$1" ]
     then 
