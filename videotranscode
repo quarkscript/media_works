@@ -1,0 +1,87 @@
+#!/bin/bash
+## Transcoding mkv, webm, flv, ts, avi to format (mp4) compatible with my TV
+## H264 =<30fps =<1920x1080 + aac dynamic compressed and normalized
+## Req: bash, hash, grep, head, tail, wc, mediainfo, ffmpeg (ffmpeg-full for hw encoders)
+## Use: ./videotranscode
+## Author Andrew S.
+## Licence GPL
+## https://github.com/quarkscript/Video-transcode.git
+
+## uncomment line corresponding to your system capabilities (software encoders work with any system)
+vidco="libx264"     ## software encoder  # libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (codec h264)
+#vidco="h264_nvenc"  ## nvidia hw encoder # NVIDIA NVENC H.264 encoder (codec h264) req. last proprietary drivers
+#vidco="h264_qsv"    ## intel hw encoder  # H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (Intel Quick Sync Video acceleration) (codec h264)
+#vidco="h264_vaapi"  ## amd hw encoder    # H.264/AVC (VAAPI) (codec h264)
+
+## desired container format
+container=mp4
+
+rm -f list.tmp fn.tmp finf.tmp
+for j in mkv webm flv ts avi
+    do
+        find -maxdepth 1 -type f -name "*.$j" | sed -e "s/.\///g" >>list.tmp
+done
+if [ "$(wc -l list.tmp | sed -e 's/ list.tmp//g' )" -eq "0" ]
+    then
+        echo .......................................
+        echo *.mkv *.webm *.flv *.ts *.avi not found
+        echo you must copy it to current dir........
+        echo ...............................exit now
+else
+    if (hash ffmpeg 2>/dev/null)&&($(ffmpeg -encoders | grep "$vidco" -q))&&(hash mediainfo 2>/dev/null)
+        then
+            while [ $((j+=1)) -le "$(wc -l list.tmp | sed -e 's/ list.tmp//g' )" ]
+                do
+                    tail -n $j list.tmp>fn.tmp
+                    i="$(head -n 1 fn.tmp)"
+                    param=""
+                    mediainfo "$i" >finf.tmp
+                    vidfps=$(cat finf.tmp | grep FPS | grep -v SPF | grep -o -e "[0-9][0-9][.]" | sed -e 's/\.//g')
+                    vidw=$(cat finf.tmp | grep Width | sed -e 's/\://g' | sed -e 's/Width//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+                    vidh=$(cat finf.tmp | grep Height | sed -e 's/\://g' | sed -e 's/Height//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+                    audch=$(cat finf.tmp | grep "Channel(s)" -m 1 | sed -e 's/\://g' | sed -e 's/Channel(s)//g' | sed -e 's/channel//g' | sed -e 's/s//g' | sed -e 's/ //g')
+                    if [ "$vidw" -gt "1920" ] || [ "$vidh" -gt "1080" ]
+                        then
+                            param+='-vf scale=h=1080:force_original_aspect_ratio=decrease:flags=fast_bilinear '
+                    fi
+                    param+="-c:v $vidco "
+## There is no universal settings for any codec, 
+## so if you want to set up a custom quality settings to encoder
+## consult with man ffmpeg, like: ffmpeg -h encoder=h264_nvenc 
+## and add a corresponding desired settings to param variable here, for example 
+## param+="-c cabac " Do not forget for last space there
+                    #param+=""
+                    if [ "$vidfps" -gt "31" ]
+                        then
+                            param+="-r 30 "
+                    fi
+                    if [ "$audch" -gt "2" ]
+                        then
+                            audparam="-ac 2 "
+                    else
+                            audparam=""
+                    fi
+                    audparam+="-af acompressor=link=maximum:ratio=10:attack=0.1:release=2000:detection=peak:threshold=-20dB"
+                    vol_up=$(ffmpeg -i "$i" -hide_banner $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[-][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
+                    if [ "$(echo $vol_up | sed -e 's/\.//g')" -gt "639" ]
+                        then 
+                            vol_up=64
+                    fi
+                    vol_up+=dB
+                    param+="-c:a aac $audparam,volume=$vol_up "
+                    
+                    ffmpeg -i "$i" $param "${i%.*}.$container" -hide_banner
+                    #echo ffmpeg -i '"'$i'"' $param '"'${i%.*}.container'"' -hide_banner >>encodescript.log
+            done
+        else
+            echo -------------------------
+            echo mediainfo or ffmpeg or...
+            echo not found or maybe ffmpeg
+            echo not supported $vidco
+            echo "           "so
+            echo transcoding not possible
+            echo -------------------------
+            echo "          "exit
+    fi
+fi
+rm -f list.tmp fn.tmp finf.tmp
