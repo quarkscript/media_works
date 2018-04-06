@@ -5,7 +5,7 @@
 ## Use: ./videotranscode
 ## Author Andrew S.
 ## Licence GPL
-## https://github.com/quarkscript/Video-transcode.git
+## https://github.com/quarkscript/media_works
 
 ## uncomment line corresponding to your system capabilities (software encoders work with any system)
 vidco="libx264"     ## software encoder  # libx264 H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10 (codec h264)
