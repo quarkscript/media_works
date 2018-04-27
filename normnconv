@@ -31,7 +31,7 @@ else
     lvlup=''
 fi
 ## aq - quality, 10 is max
-ffmpeg -i "$1" -acodec libvorbis -aq 9 -ar 44100 $lvlup "${1%.*}.ogg" 
+ffmpeg -i "$1" -acodec libvorbis -aq 9 -ar 44100 -f oga $lvlup "${1%.*}.ogg" 
 #ffmpeg -i "$1" -acodec libopus -b:a 320k $lvlup "${1%.*}.ogg" 
 }
 
