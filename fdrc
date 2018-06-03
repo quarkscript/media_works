@@ -1,0 +1,60 @@
+#!/bin/bash
+## Force DRC to audio streams of *.mkv, *.mp4 files in the current folder
+## Multichannels and multistreams are supported
+## Req. ffmpeg. head. tail. wc
+## There are no checks, so the probability of failure is high
+## Use ./fdrc
+## Author Andrew S.
+## Licence GPL
+## https://github.com/quarkscript/media_works
+findgain(){
+                    audparam="-af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB"
+                    ptmf=$(mktemp tmp.XXXXXXXXX)
+                    ptmf1=$(mktemp tmp.XXXXXXXXX)
+                    head -n $3 $2>$ptmf1
+                    tail -n 1 $ptmf1>$ptmf
+                    astream_id=$(cat $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g')
+                    astream_ch=$(cat $ptmf | sed 's\.*Hz, \\g' | sed 's\(.*\\g')
+                    astream_fr=$(cat $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
+                    astream_cod=$(cat $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
+                    astream_bitrate=$(cat $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
+                    astream_bitrate+=k
+                    vol_up=$(ffmpeg -i "$1" -hide_banner -map 0:"$astream_id" $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[-][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
+                    if [ "$(echo $vol_up | sed -e 's/\.//g')" -gt "600" ]; then 
+                        vol_up=60
+                    fi
+                    vol_up+=dB
+                    echo "-c:a:$5 $astream_cod -b:a $astream_bitrate -ar $astream_fr $audparam,volume=$vol_up ">>$4
+                }
+ffmproc(){
+                    scr=$(mktemp tmp.XXXXXXXXX)
+                    tmf=$(mktemp tmp.XXXXXXXXX)
+                    script=""
+                    ffmpeg -hide_banner -i "$1" 2>$tmf
+                    script+="-map 0 -c copy "
+                    echo $script>$scr
+                    count=0
+                    for i in $(cat $tmf | grep "Audio" -n | sed 's/:.*//g'); do
+                        findgain "$1" "$tmf" "$i" "$scr" "$count"&
+                        count=$(($count+1))
+                    done
+                    wait
+                    script=$(echo $(cat $scr))
+                    rm -f tmp.*
+                    ffmpeg -i "$1" $script "$2$1" -hide_banner
+                }
+prefix="drc-ed_"
+fmts="mkv mp4"
+lst=$(mktemp lst.XXXXXXXXX)
+for i in $fmts; do
+    find  -maxdepth 1 -not -name "$prefix*" -name "*.$i" | sed 's|\.\/||g'>>$lst
+done
+currfile=$(mktemp lst.XXXXXXXXX)
+enf=$(wc -l $lst | sed 's/ lst.*//g')
+for (( j=1; j<=$enf; j+=1)); do
+    head -n $j $lst>$currfile
+    inpar=$(tail -n 1 $currfile)
+    ffmproc "$inpar" "$prefix"
+done
+rm -f lst.*
+
