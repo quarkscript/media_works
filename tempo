@@ -1,0 +1,36 @@
+#!/bin/bash
+if [ -z "$1" ]; then 
+    echo 'Fail: Missing input argument - input audio format.. i.e. ./tempo "*.mp3"
+    
+## Normalizing, converting to ogg and change speed of music from 0.5 to 2.0
+## (outside of that interval causes ffmpeg to fail). No any checks, no any guarantee.
+## By default speed is 1.5 Use: ./tempo "*.format" or ./tempo "*.format" "speed" 
+## Author Andrew S. Licence GPL v3. Req.: bash, grep, sed, ffmpeg
+## https://github.com/quarkscript/media_works'
+    exit 1
+else
+    flst=$1
+fi
+if [ -z "$2" ]; then
+    tempo_factor=1.5
+else
+    tempo_factor=$2
+fi
+conv() { 
+lvlup=$(ffmpeg -i "$1" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
+afc="-af volume=$lvlup"
+afc+="dB"
+afc+=",atempo=$2"
+ffmpeg -i "$1" -acodec libvorbis -aq 9 -ar 48000 -f oga $afc "$2"X"${1%.*}.ogg" -hide_banner
+}
+threads=$(($(grep 'model name' /proc/cpuinfo --count)+0))
+count=0
+for i in $flst; do
+    conv "$i" "$tempo_factor"&
+    count=$(($count+1))
+    if [ "$count" == "$threads" ]; then
+        wait
+        count=0
+    fi
+done
+wait

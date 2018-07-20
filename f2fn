@@ -1,0 +1,40 @@
+#!/bin/bash
+echo '
+## flac to flac conversion and normalization. No any checks, no any guarantee.
+## Use: ./f2fn or ./f2fn "*.format" or ./f2fn "*.format" "output prefix"  or ./f2fn "" "pref"
+## Author Andrew S. Licence GPL v3. Req.: bash, grep, sed, ffmpeg
+## https://github.com/quarkscript/media_works
+'
+if [ -z "$1" ]; then 
+    flst="*.flac"
+    echo 'Will be processed *.flac files from current folder
+'
+else
+    flst=$1
+    echo "Will be processed $1 files from current folder
+"
+fi
+if [ -z "$2" ]; then
+    prefix="normed_"
+else
+    prefix=$2
+fi
+conv() { 
+lvlup=$(ffmpeg -hide_banner -i "$1" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
+afc="-af volume=$lvlup"
+afc+="dB"
+ffmpeg -i "$1" -c:a flac  -compression_level 8 $afc $2"${1%.*}.flac" -hide_banner
+}
+threads=$(($(grep 'model name' /proc/cpuinfo --count)+0))
+count=0
+for i in $flst; do
+    if ( ! $(echo $i | grep "$prefix" -q)); then
+        conv "$i" "$prefix"&
+        count=$(($count+1)) 
+        if [ "$count" == "$threads" ]; then
+            wait
+            count=0
+        fi
+    fi
+done
+wait
