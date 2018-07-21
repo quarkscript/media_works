@@ -20,7 +20,7 @@ conv() {
 lvlup=$(ffmpeg -i "$1" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
 afc="-af volume=$lvlup"
 afc+="dB"
-# afc+=",atempo=$tempo_factor"
+# afc+=",atempo=$2"
 # ffmpeg -i "$1" -acodec libvorbis -aq 9 -ar 48000 -f oga $afc "$2"X"${1%.*}.ogg" -hide_banner
 ## It seems atempo drops some frames and made poor quality, there is another option but it affects pitch too
 arate=$(ffmpeg -hide_banner -i "$1" -f null /dev/null 2>&1 |  grep "Audio" | sed -e 's/ Hz.*//g' | sed -e 's/.*, //g')
