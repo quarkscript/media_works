@@ -1,11 +1,9 @@
 #!/bin/bash
 ## Force DRC to audio streams of *.mkv, *.mp4 files in the current folder
 ## Multichannels and multistreams are supported
-## Req. ffmpeg. head. tail. wc
-## There are no checks, so the probability of failure is high
-## Use ./fdrc
-## Author Andrew S.
-## Licence GPL
+## Req. bash, grep, sed, head, tail, wc, ffmpeg. Use: ./fdrc 
+## There are not all checks, so the probability of failure is high
+## Author Andrew S. Licence GPL
 ## https://github.com/quarkscript/media_works
 findgain(){
                     audparam="-af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB"
@@ -18,7 +16,15 @@ findgain(){
                     astream_fr=$(cat $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
                     astream_cod=$(cat $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
                     astream_bitrate=$(cat $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
+                    if ( ! $(echo $astream_bitrate | grep [1-9][0-9][0-9] -q) ); then
+                        astream_bitrate=128
+                    fi
                     astream_bitrate+=k
+                    if [ "$astream_cod" == "opus" ]; then
+                        astream_cod="libopus"
+                    elif [ "$astream_cod" == "vorbis" ]; then
+                        astream_cod="libvorbis"
+                    fi
                     vol_up=$(ffmpeg -i "$1" -hide_banner -map 0:"$astream_id" $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
                     if [ "$(echo $vol_up | sed -e 's/\.//g')" -gt "600" ]; then 
                         vol_up=60
@@ -57,4 +63,3 @@ for (( j=1; j<=$enf; j+=1)); do
     ffmproc "$inpar" "$prefix"
 done
 rm -f lst.*
-
