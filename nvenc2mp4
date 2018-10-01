@@ -1,61 +1,93 @@
 #!/bin/bash
-if [ ! -z "$1" ]; then echo '
+if [ ! -z "$1" ] || [ ! -z "$2" ] && [ "$2" != "no" ]; then echo '
  Fast transcoding (mkv webm flv ts avi) to compatible format with an old TV
  i.e. *.mp4 {H264 =<30fps =<1920x1080 + aac normalized drc}
  Req: bash, hash, grep, head, tail, wc, mediainfo, ffmpeg with nvenc support,
  nvidia GT 630 or better (except 1030) and installed proprietary Nvidia drivers
- Use: ./nvenc2mp4
- Author Andrew S.
- Licence GPL
+ Use: ./nvenc2mp4 or ./nvenc2mp4 "" "no"
+ "no" means do not use dynamic range compression for audio
+ Author Andrew S. License GPL
  https://github.com/quarkscript/media_works
 ' ;exit 0 ;fi
-
+if [ -z "$2" ]; then
+    use_drc="yes"
+elif [ "$2" == "no" ]; then
+    use_drc="no"
+fi
+##
+## max output video resolution
+rvw=1920
+rvh=1080
+## max output video frame rate
+mvfr=30
+## extensions
+extns="mkv webm flv ts avi"
+##
 rm -f list.tmp fn.tmp finf.tmp
-for j in mkv webm flv ts avi ; do
+for j in $extns; do
         find -maxdepth 1 -type f -name "*.$j" | sed -e "s/.\///g" >>list.tmp
 done
 if [ "$(wc -l list.tmp | sed -e 's/ list.tmp//g' )" -eq "0" ]; then
         echo "
-*.mkv *.webm *.flv *.ts *.avi not found, copy video sources to current dir 
-or rename existed to any of specified extensions... exit now."
+Files with extensions: $(echo $extns | sed 's/ /, /g')
+not found. Copy video sources to current dir 
+or rename existed to any of specified extensions. Exit now."
 else
-    if (hash ffmpeg 2>/dev/null)&&($(ffmpeg -encoders | grep h264_nvenc -q))&&(hash mediainfo 2>/dev/null); then
+    if (hash ffmpeg 2>/dev/null)&&($(ffmpeg -encoders -hide_banner | grep h264_nvenc -q))&&(hash mediainfo 2>/dev/null); then
             while [ $((j+=1)) -le "$(wc -l list.tmp | sed -e 's/ list.tmp//g' )" ]; do
                     tail -n $j list.tmp>fn.tmp
                     i="$(head -n 1 fn.tmp)"
+                    echo Processing $i
                     param=""
                     mediainfo "$i" >finf.tmp
+                    ccids=$(cat finf.tmp | grep "Codec ID" | sed -e 's/Codec ID//g' | sed -e 's/\://g' | sed -e 's/\/Info//g')
                     vidfps=$(cat finf.tmp | grep FPS | grep -v SPF | grep -o -e "[0-9][0-9][.]" | sed -e 's/\.//g')
                     vidw=$(cat finf.tmp | grep Width | sed -e 's/\://g' | sed -e 's/Width//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
                     vidh=$(cat finf.tmp | grep Height | sed -e 's/\://g' | sed -e 's/Height//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
                     audch=$(cat finf.tmp | grep "Channel(s)" -m 1 | sed -e 's/\://g' | sed -e 's/Channel(s)//g' | sed -e 's/channels//g' | sed -e 's/ //g')
-                    if [ "$vidw" -gt "1920" ] || [ "$vidh" -gt "1080" ]; then
-                            param+='-vf scale=h=1080:force_original_aspect_ratio=decrease:flags=fast_bilinear '
+                    if [ "$vidw" -gt "$rvw" ] || [ "$vidh" -gt "$rvh" ]; then
+                            param+='-vf scale=h='$rvh':force_original_aspect_ratio=decrease:flags=fast_bilinear '
                     fi
+                    ## for list of video codec params execute from shell "ffmpeg -help encoder=nvenc_h264"
                     param+='-c:v h264_nvenc -coder cabac -preset hq -rc vbr_hq  '
-                    if [ "$vidfps" -gt "31" ]; then
-                            param+="-r 30 "
+                    if [ "$vidfps" -gt "$(($mvfr+1))" ]; then
+                            param+="-r $mvfr "
                     fi
                     if [ "$audch" -gt "2" ]; then
                             audparam="-ac 2 "
                     else
                             audparam=""
                     fi
-                    audparam+="-af acompressor=link=maximum:ratio=10:attack=0.1:release=2000:detection=peak:threshold=-20dB"
-                    echo calculating audio gain...
-                    vol_up=$(ffmpeg -i "$i" -hide_banner $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
+                    if [ "$use_drc" == "yes" ]; then
+                        audparam+="-af acompressor=link=maximum:ratio=10:attack=0.1:release=2000:detection=peak:threshold=-20dB"
+                        echo DRC is on, audio gain will be bigger
+                    else
+                        audparam+="-af acopy"
+                        echo DRC is off
+                    fi
+                    echo Calculating audio gain...
+                    vol_up=$(ffmpeg -i "$i" -hide_banner $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+                    echo ... $vol_up dB
                     if [ "$(echo $vol_up | sed -e 's/\.//g')" -gt "639" ]; then 
                             vol_up=64
                     fi
                     vol_up+=dB
                     param+="-c:a aac $audparam,volume=$vol_up "
-                    
-                    ffmpeg  -hwaccel cuda -i "$i" $param "${i%.*}.mp4" -hide_banner
-                    #ffmpeg -hwaccel cuvid -i "$i" $param "${i%.*}.mp4" -hide_banner
-                    #echo ffmpeg -hwaccel cuvid -i '"'$i'"' $param '"'${i%.*}.mp4'"' -hide_banner >>log.tmp
+                    if ($(echo $ccids | grep -q --regexp=264 --regexp=AVC --regexp=avc))&&(!($(echo $param | grep -q scale))); then
+                        hwac="-hwaccel cuda"
+                        # hwac="-hwaccel cuvid"
+                        echo Used internal nvidia transcoding mechanism
+                    else
+                        hwac=""
+                    fi
+                    ffmpeg $hwac -i "$i" $param "${i%.*}.mp4" -hide_banner
             done
-        else
-            echo "ffmpeg or mediainfo not found or ffmpeg doesn't support h264_nvenc"
+    elif (hash ffmpeg 2>/dev/null); then
+        echo "ffmpeg not found. Exit now."
+    elif ($(ffmpeg -encoders -hide_banner | grep h264_nvenc -q)); then
+        echo "ffmpeg doesn't support h264_nvenc. Exit now."
+    elif (hash mediainfo 2>/dev/null); then
+        echo "mediainfo not found. Exit now."
     fi
 fi
 rm -f list.tmp fn.tmp finf.tmp
