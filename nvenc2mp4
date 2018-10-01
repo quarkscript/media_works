@@ -82,11 +82,11 @@ else
                     fi
                     ffmpeg $hwac -i "$i" $param "${i%.*}.mp4" -hide_banner
             done
-    elif (hash ffmpeg 2>/dev/null); then
+    elif !(hash ffmpeg 2>/dev/null); then
         echo "ffmpeg not found. Exit now."
-    elif ($(ffmpeg -encoders -hide_banner | grep h264_nvenc -q)); then
+    elif !($(ffmpeg -encoders -hide_banner | grep h264_nvenc -q)); then
         echo "ffmpeg doesn't support h264_nvenc. Exit now."
-    elif (hash mediainfo 2>/dev/null); then
+    elif !(hash mediainfo 2>/dev/null); then
         echo "mediainfo not found. Exit now."
     fi
 fi
