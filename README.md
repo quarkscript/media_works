@@ -15,4 +15,4 @@ Demonstration http://www.youtube.com/watch?v=PAv4LF05Bes
 
 - [**f2fn**](f2fn) ~~(fvn)~~ - normalize and recompress flac to flac, equivalent but louder if possible.
 
->**For more help see scrips code**
+>**For more help see script code**
