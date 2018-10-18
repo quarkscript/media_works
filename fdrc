@@ -1,56 +1,113 @@
 #!/bin/bash
-## Force DRC to audio streams of *.mkv, *.mp4 files in the current folder
+if [ ! -z "$1" ]; then
+echo ' 
+## Force Dynamic Range Compression to the volume
+## of *.mkv and *.mp4 files in the current folder
+## Result is louder but not an equivalent to source
 ## Multichannels and multistreams are supported
-## Req. bash, grep, sed, head, tail, wc, ffmpeg. Use: ./fdrc 
+## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg. 
+## Use: ./fdrc or ./fdrc "" [a_codec] [a_bitrate] [no]
+## a_codec: aac, mp3, vorbis, ac3, opus...
+## a_bitrate: 128, 320, 1536... kbps
+## "no" means do not to check ffmpeg encoder compatibility
+## Possible unspecified multichannel conversion! Be Aware!
+## If you are sure that the encoder support same channels 
+## and samples as input file has, you can specify "no"
+## For example: ./fdrc "" flac "" no
+## but ./fdrc "" aac 256
 ## There are not all checks, so the probability of failure is high
-## Author Andrew S. Licence GPL
+## Author Andrew S. License GPLv2  Tested with ffmpeg 4.0.2
 ## https://github.com/quarkscript/media_works
-findgain(){
-                    audparam="-af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB"
-                    ptmf=$(mktemp tmp.XXXXXXXXX)
-                    ptmf1=$(mktemp tmp.XXXXXXXXX)
-                    head -n $3 $2>$ptmf1
-                    tail -n 1 $ptmf1>$ptmf
-                    astream_id=$(cat $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g')
-                    astream_ch=$(cat $ptmf | sed 's\.*Hz, \\g' | sed 's\(.*\\g')
-                    astream_fr=$(cat $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
-                    astream_cod=$(cat $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
-                    astream_bitrate=$(cat $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
-                    if ( ! $(echo $astream_bitrate | grep [1-9][0-9][0-9] -q) ); then
-                        astream_bitrate=128
-                    fi
-                    astream_bitrate+=k
-                    if [ "$astream_cod" == "opus" ]; then
-                        astream_cod="libopus"
-                    elif [ "$astream_cod" == "vorbis" ]; then
-                        astream_cod="libvorbis"
-                    fi
-                    vol_up=$(ffmpeg -i "$1" -hide_banner -map 0:"$astream_id" $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
-                    if [ "$(echo $vol_up | sed -e 's/\.//g')" -gt "600" ]; then 
-                        vol_up=60
-                    fi
-                    vol_up+=dB
-                    echo "-c:a:$5 $astream_cod -b:a $astream_bitrate -ar $astream_fr $audparam,volume=$vol_up ">>$4
-                }
+'; exit 1; fi
+if [ ! -z "$4" ]&&[ "$4" != "no" ]; then
+    $0 -h
+    exit 1
+fi
+    
+findgain(){            
+            audparam=""
+            ptmf=$(head -n $3 $2 2>&1 | tail -n 1 )
+            astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g')
+            astream_ch=$(echo $ptmf | sed 's\.*Hz, \\g' | sed 's\(.*\\g' | sed 's/\,.*//g')
+            astream_fr=$(echo $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
+            astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
+            astream_bitrate=$(echo $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
+            echo 'File: '$1
+            echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Compressor: $astream_cod"
+            if [ ! -z "$7" ]; then
+                astream_bitrate=$7
+            elif ( ! $(echo $astream_bitrate | grep [1-9][0-9][0-9] -q) ); then
+                astream_bitrate=128
+            fi
+            astream_bitrate+=k
+            if [ ! -z "$6" ]; then
+                astream_cod=$6
+            fi
+            case $astream_cod in
+                opus)   astream_cod=libopus
+            ;;
+                vorbis) astream_cod=libvorbis
+            ;;
+                mp3)    astream_cod=libmp3lame
+            esac
+            ## check ffmpeg audio encoder capabilities, for forced encoders only
+            if [ -z "$8" ]&&[ ! -z "$6" ]; then
+                if (!($(ffmpeg -h encoder="$astream_cod" -hide_banner | grep "Supported sample rates" | sed 's/.*\://g' | grep -q "$astream_fr")))&&(!($(echo $astream_cod | grep -q libvorbis ))); then
+                    echo "!!!   ffmpeg $astream_cod encoder doesn't support $astream_fr Hz or may be doesn't provide a list of supported sample rates. It was forced to 48000 Hz"
+                    astream_fr=48000
+                fi
+                if (!($(ffmpeg -h encoder="$astream_cod" -hide_banner | grep "Supported channel layouts" | sed 's/.*\://g' | grep -q "$astream_ch")))&&(!($(echo $astream_cod | grep -q libvorbis ))&&(!($(echo $astream_cod | grep -q libopus )))); then
+                    echo "!!!   ffmpeg $astream_cod encoder doesn't support $astream_ch channels or may be doesn't provide a list of supported channels. It was forced to stereo"
+                    audparam="-ac 2 "
+                    astream_ch="stereo"
+                fi
+            fi
+            ## allow to use some experimental codecs
+            case $astream_cod in
+                dts)    astream_cod+=" -strict -2"
+                        echo "!!!   Try experimental codec implementation. It's not a good idea, actually"
+                        echo "!!!   Channels may be reduced, for example 6.1 to 5.1"
+            ;;
+                truehd) astream_cod+=" -strict -2"
+                        echo "!!!   Try experimental codec implementation. It's not a good idea, actually"
+            esac
+            ## 
+            if [ "$astream_ch" == "stereo" ]||[ "$astream_ch" == "mono" ]; then
+                audparam+="-af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB"
+            else
+                echo "It seems there are more than 2 channels per stream. Compressor works more effective with stereo, actually"
+                audparam+="-af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-40dB"
+            fi
+            echo Calculating...
+            vol_up=$(ffmpeg -i "$1" -hide_banner -map 0:"$astream_id" $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
+            vol_up+=dB
+            echo "Volume gain: $vol_up"
+            echo "-c:a:$5 $astream_cod -b:a $astream_bitrate -ar $astream_fr $audparam,volume=$vol_up ">>$4
+            }
 ffmproc(){
-                    scr=$(mktemp tmp.XXXXXXXXX)
-                    tmf=$(mktemp tmp.XXXXXXXXX)
-                    script=""
-                    ffmpeg -hide_banner -i "$1" 2>$tmf
-                    script+="-map 0 -c copy "
-                    echo $script>$scr
-                    count=0
-                    for i in $(cat $tmf | grep "Audio" -n | sed 's/:.*//g'); do
-                        findgain "$1" "$tmf" "$i" "$scr" "$count"&
-                        count=$(($count+1))
-                    done
-                    wait
-                    script=$(echo $(cat $scr))
-                    rm -f tmp.*
-                    ffmpeg -i "$1" $script "$2$1" -hide_banner
-                }
+            scr=$(mktemp tmp.XXXXXXXXX)
+            tmf=$(mktemp tmp.XXXXXXXXX)
+            script=""
+            ffmpeg -hide_banner -i "$1" 2>$tmf
+            script+="-map 0 -c copy "
+            echo $script>$scr
+            count=0
+            for i in $(cat $tmf | grep "Audio" -n | sed 's/:.*//g'); do
+                findgain "$1" "$tmf" "$i" "$scr" "$count" "$3" "$4" "$5"&
+                count=$(($count+1))
+            done
+            wait
+            script=$(echo $(cat $scr))
+            rm -f tmp.*
+            if ($(echo $1 | grep -q mp4))&&(!($(echo $3 | grep --regexp=mp3 --regexp=aac -q)))&&[ ! -z "$3" ]; then
+                echo "!!!   Forced encoder is incompatible with mp4, result will be muxed to mkv"
+                ffmpeg -i "$1" $script "$2${1%.*}.mkv" -hide_banner
+            else
+                ffmpeg -i "$1" $script "$2$1" -hide_banner
+            fi
+            }
 prefix="drc-ed_"
-fmts="mkv mp4"
+fmts="mp4 mkv"
 lst=$(mktemp lst.XXXXXXXXX)
 for i in $fmts; do
     find  -maxdepth 1 -not -name "$prefix*" -name "*.$i" | sed 's|\.\/||g'>>$lst
@@ -58,8 +115,6 @@ done
 currfile=$(mktemp lst.XXXXXXXXX)
 enf=$(wc -l $lst | sed 's/ lst.*//g')
 for (( j=1; j<=$enf; j+=1)); do
-    head -n $j $lst>$currfile
-    inpar=$(tail -n 1 $currfile)
-    ffmproc "$inpar" "$prefix"
+    ffmproc "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$2" "$3" "$4"
 done
 rm -f lst.*
