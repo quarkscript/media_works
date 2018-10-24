@@ -1,0 +1,41 @@
+# !/bin/bash 
+## x264 experimental Multi-Pass Encoding Helper script. It allow to find a 
+## "high motion" zones and increase bitrate of them, 
+## by cost of slightly decreasing bitrate of other frames.
+## Zones are bordered by specified persent of selected frame types 
+## with max texture sizes. 
+## Req.: bash, grep, sed, cat, sort, awk, echo, x264 1st-pass log file
+## Use: place x264_2pass.log to same dir and run - ./mpeh
+## There are no any checks, so the probability of failure is high.
+## Author Andrew S. License GPLv2. https://github.com/quarkscript/media_works
+
+## options
+stats_file="x264_2pass.log"
+border_frames_persent=5 ## there is no sense to increase it too high
+bitrate_multipl=1.5     ## too high value can leads to a noticeable degrade quality out of zones
+frame_type="type:P"
+
+itvl_thrsh=$(cat $stats_file| head -n 1 | sed 's/.*keyint\=//g' | sed 's/ .*//g')
+tmp=$(mktemp tmp.XXXXXXXXX)
+echo "$""2 > "$(cat $stats_file | grep "$frame_type" -n | sed 's/.*tex\://g' | sed 's/ .*//g' | sort -nr | head -n $(($(cat $stats_file | grep "$frame_type" --count)*$border_frames_persent/100)) | tail -n 1)" " >>$tmp
+f_list=$(cat $stats_file | grep "$frame_type" | sed 's/.*out\://g' | sed 's/ .*tex\:/ /g' | sed 's/ mv.*//g' | awk -f $tmp | sed 's/ .*//g')
+rm -f $tmp
+pr_frame=$(echo $f_list | sed 's/ .*//g')
+bg_zone=$pr_frame
+for cur_frame in $f_list; do
+    if [ "$(($cur_frame-$pr_frame))" -gt "$itvl_thrsh" ]; then
+## for not including into zones a single frames uncomment next 'if' and 'fi' lines
+        #if [ "$pr_frame" != "$bg_zone" ]; then
+            zns+="$bg_zone,$pr_frame,b=$bitrate_multipl/"
+            bg_zone=$cur_frame
+        #fi
+    fi
+    pr_frame=$cur_frame
+done
+zns+="XXX"
+zns=$(echo $zns | sed 's/\/XXX//g')
+echo $zns >fzones
+echo '
+copy fzones to encoding dir and
+add next option to x264 command: 
+--zones $(cat fzones)'
