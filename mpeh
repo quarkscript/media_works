@@ -1,4 +1,4 @@
-# !/bin/bash 
+#!/bin/bash 
 ## x264 experimental Multi-Pass Encoding Helper script. It allow to find a 
 ## "high motion" zones and increase bitrate of them, 
 ## by cost of slightly decreasing bitrate of other frames.
