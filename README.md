@@ -9,6 +9,8 @@ Demonstration http://www.youtube.com/watch?v=PAv4LF05Bes
 
 - [**tempo**](tempo) - shell script that allow to "overclock" or "underclock" speed of audio files
 
+- [**mpeh**](mpeh) - experimental helper script for x264 multi-pass encoding, it allow to find a "high motion" zones and increase bitrate of them
+
 **More simpler scripts:**
 
 - [**normnconv**](normnconv) - normalize audio/music during convert it to *.ogg 
