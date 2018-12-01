@@ -4,8 +4,10 @@
 - [**nvenc2mp4**](nvenc2mp4) -nvidia hardware accelerated video transcoding script: mkv, webm, flv, ts, avi to mp4
 Demonstration http://www.youtube.com/watch?v=393S58i6VnM
 
-- [**fdrc**](fdrc) - "force dynamic range compression" makes the sound of video files in the format *.mkv or *.mp4 louder, but not an  equivalent to sources, so it suitable for movies and cartoons, but not for concerts and music.
+- [**fdrc**](fdrc) - "force dynamic range compression" makes the sound of video files in the format *.mkv or *.mp4 louder, but not an  equivalent to sources, so it suitable for movies and cartoons, but not for concerts and music. This is best used for stereo channels or downmix to stereo.
 Demonstration http://www.youtube.com/watch?v=PAv4LF05Bes
+
+- [**fdrch**](fdrch) - "Force Dynamic Range Compression to center cHannel" makes the sound of video files in the format *.mkv louder. This is best used for multichannel audio streams with a center channel (FC)
 
 - [**tempo**](tempo) - shell script that allow to "overclock" or "underclock" speed of audio files
 
