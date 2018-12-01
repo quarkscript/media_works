@@ -18,6 +18,7 @@ echo '
 ## There are not all checks, so the probability of failure is high
 ## Author Andrew S. License GPLv2  Tested with ffmpeg 4.0.2
 ## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
 '; exit 1; fi
 if [ ! -z "$4" ]&&[ "$4" != "no" ]; then
     $0 -h
@@ -75,7 +76,7 @@ findgain(){
             if [ "$astream_ch" == "stereo" ]||[ "$astream_ch" == "mono" ]; then
                 audparam+="-af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB"
             else
-                echo "It seems there are more than 2 channels per stream. Compressor works more effective with stereo, actually"
+                echo "It seems there are more than 2 channels per stream. It is better to use 'fdrch', actually"
                 audparam+="-af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-40dB"
             fi
             echo Calculating...

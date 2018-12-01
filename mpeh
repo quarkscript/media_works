@@ -7,7 +7,9 @@
 ## Req.: bash, grep, sed, cat, sort, awk, echo, x264 1st-pass log file
 ## Use: place x264_2pass.log to same dir and run - ./mpeh
 ## There are no any checks, so the probability of failure is high.
-## Author Andrew S. License GPLv2. https://github.com/quarkscript/media_works
+## Author Andrew S. License GPLv2. 
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
 
 ## options
 stats_file="x264_2pass.log"
@@ -15,7 +17,7 @@ border_frames_persent=5 ## there is no sense to increase it too high
 bitrate_multipl=1.5     ## too high value can leads to a noticeable degrade quality out of zones
 frame_type="type:P"
 
-itvl_thrsh=$(cat $stats_file| head -n 1 | sed 's/.*keyint\=//g' | sed 's/ .*//g')
+itvl_thrsh=$(($(cat $stats_file| head -n 1 | sed 's/.*keyint\=//g' | sed 's/ .*//g')*2))
 tmp=$(mktemp tmp.XXXXXXXXX)
 echo "$""2 > "$(cat $stats_file | grep "$frame_type" -n | sed 's/.*tex\://g' | sed 's/ .*//g' | sort -nr | head -n $(($(cat $stats_file | grep "$frame_type" --count)*$border_frames_persent/100)) | tail -n 1)" " >>$tmp
 f_list=$(cat $stats_file | grep "$frame_type" | sed 's/.*out\://g' | sed 's/ .*tex\:/ /g' | sed 's/ mv.*//g' | awk -f $tmp | sed 's/ .*//g')
