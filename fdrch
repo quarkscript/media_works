@@ -169,7 +169,7 @@ file_processing(){
     chmod +x $scr 
     ./$scr
     echo Remuxing...
-    streams_num=$(($(ffmpeg -hide_banner -i tst.mkv 2>&1| grep Stream -c)-1))
+    streams_num=$(($(ffmpeg -hide_banner -i "$1" 2>&1| grep Stream -c)-1))
     count=1
     comp_string1='ffmpeg -hide_banner -i "'"$1"'" '
     comp_string2+="-c copy "
