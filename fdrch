@@ -1,15 +1,15 @@
 #!/bin/bash
 if [ -n "$1" ]||[ -n "$4" ]&&[ "$4" != "i" ]&&[ "$4" != "ic" ]; then
 echo ' 
-## Force Dynamic Range Compression to central cHannel, other channels 
+## Force Dynamic Range Compression to center cHannel, other channels 
 ## normalized by default. Multichannels and multistreams are supported.
 ## For stereo or mono or downmix to stereo use "fdrc" instead.
 ## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg.
 ## There are not all checks, so the probability of failure is high.
 ## Use: ./fdrch or ./fdrch "" [a_codec] [a_bitrate] [i,ic]
-## a_codec: flac, vorbis, ac3, opus... a_bitrate: 1536... kbps
-## "i" - normalize channels individually, "ic" - compress
-## Author Andrew S. License GPLv2 Tested with ffmpeg 4.1
+## a_codec: flac, ac3, eac3, vorbis... a_bitrate: 512, 1536... in kbps
+## i: normalize channels individually... ic: "i" + light compress
+## Author Andrew S. License GPLv2  Tested with ffmpeg 4.1
 ## https://github.com/quarkscript/media_works
 ## https://gitlab.com/quarkscript/media_shell_scripts/
 '; exit 1; fi
@@ -18,7 +18,7 @@ get_ch_gain(){
     ## get channel gain
     ch_g=$(ffmpeg -i "$1" -hide_banner -filter_complex "$2" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
     echo " $3=$ch_g""dB ">>$4
-    }
+}
 
 gainlim(){
     ## very simple limiter
@@ -29,7 +29,7 @@ gainlim(){
     else
         echo "$(($tmp1-$2-1)).$((10+$tmp2-$3))dB"
     fi
-    }
+}
 
 ming1(){
     ## take min amplifyer
@@ -55,10 +55,10 @@ astrem_calc(){
     astream_fr=$(echo $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
     astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
     astream_bitrate=$(echo $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
+    astream_sf=fltp
     echo 'File: '$1
-    echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Compressor: $astream_cod"
+    echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Codec: $astream_cod"
     list_of_ch=$(ffmpeg -layouts -hide_banner | grep $astream_ch | sed "s/$astream_ch//g" | sed 's/ //g' | sed 's/\+/ /g')
-    echo $list_of_ch
     
     ## some checks ##
     if [ ! -z "$6" ]; then
@@ -114,9 +114,10 @@ astrem_calc(){
     done
     wait
     
-    filter_string='ffmpeg -i "'
+    filter_string='ffmpeg -guess_layout_max 0  -i "'
+    #filter_string='ffmpeg -i "'
     filter_string+="$1"'"'
-    filter_string+=" -hide_banner -metadata:s:a:0 language=$astream_lng -filter_complex "'"'
+    filter_string+=" -hide_banner -metadata:s:a:0 language=$astream_lng -metadata:s:a:0 title="'"'"$8"'"'" -filter_complex "'"'
     filter_string+="[0:$astream_id]channelsplit=channel_layout=$astream_ch"
     for j1 in $list_of_ch; do
         filter_string+="[in$j1]"
@@ -136,21 +137,34 @@ astrem_calc(){
             else
                 tmpvar=0
             fi
-            filter_string+="[in$j1]aformat=sample_fmts=fltp:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g1" "$tmpvar" '2') [$j1];"
+            filter_string+="[in$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g1" "$tmpvar" '2') [$j1];"
         else
             g1=$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')
             g1=$(echo $g1 | sed 's/ //g')
             g2=$(cat $tmp_tmp | sed "s/.*g2\:$astream_id\:$j1=//g" | sed 's/ .*//g')
             g2=$(echo $g2 | sed 's/ //g')
-            filter_string+="[in$j1]volume=$g1 [l1$j1];[l1$j1]$compressor_settings [l2$j1];[l2$j1]aformat=sample_fmts=fltp:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g2" '0' '2') [$j1];"
+            filter_string+="[in$j1]volume=$g1 [l1$j1];[l1$j1]$compressor_settings [l2$j1];[l2$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g2" '0' '2') [$j1];"
         fi
     done
     for j1 in $list_of_ch; do
         filter_string+="[$j1]"
     done
-    filter_string+="amerge=inputs=$(($(echo $astream_ch | sed 's/(.*//g' | sed 's/\./\+/g'))) [Out]" 
-    filter_string+='" -map "[Out]" '
-    filter_string+=" -c:a $astream_cod -b:a $astream_bitrate -vn tmp.$astream_id.mka &"
+    
+    if [ "$astream_ch" == "stereo" ]; then
+        astream_inputs=2
+    elif [ "$astream_ch" == "mono" ]; then
+        astream_inputs=1
+    else
+        astream_inputs=$(($(echo $astream_ch | sed 's/(.*//g' | sed 's/\./\+/g')))
+    fi
+#     if [ "$astream_cod" == "eac3" ]; then
+#         fsf="-sample_fmt fltp "
+#     fi
+    
+    filter_string+="amerge=inputs=$astream_inputs [Out]" 
+    filter_string+='" -map "[Out]"'
+    #filter_string+=" -c:a $astream_cod -b:a $astream_bitrate $fsf -vn -sn -dn tmp.$astream_id.mka &"
+    filter_string+=" -c:a $astream_cod -b:a $astream_bitrate $fsf""-channel_layout "'"'"$astream_ch"'"'" -vn -sn -dn tmp.$astream_id.mka &"
 
     rm -f $tmp_tmp
     echo "$filter_string">>$4
@@ -160,9 +174,15 @@ file_processing(){
     scr=$(mktemp tmp.XXXXXXXXX)
     tmf=$(mktemp tmp.XXXXXXXXX)
     ffmpeg -hide_banner -i "$1" 2>$tmf
+    echo ''
+    echo Calculations can be time consuming. Be patient.
     for i in $(cat $tmf | grep "Audio" -n | sed 's/:.*//g'); do
         echo ""
-        astrem_calc "$1" "$tmf" "$i" "$scr" "$3" "$4" "$5"
+        #astr=$(cat $tmf | head -n $i | tail -n 1 | sed 's\.*0:\\g' | sed 's\(.*\\g')
+        #mediainfo "$1" | grep --regexp=Audio --regexp="Bit depth" | grep Audio -n -m 1 | sed 's/\:.*//g'
+        #mediainfo "$1" | grep --regexp=Audio --regexp="Bit depth" | grep -e "Audio #$astr" -n | sed 's/\:.*//g'
+        titles=$(cat $tmf | tail -n +$i | grep --regexp=Audio --regexp=title | head -n 2 | grep title | sed 's/.*\: //g')
+        astrem_calc "$1" "$tmf" "$i" "$scr" "$3" "$4" "$5" "$titles"
     done
     echo wait>>$scr
     rm -f tmp.*.mka
@@ -182,7 +202,6 @@ file_processing(){
             comp_string2+="-map 0:$ll "
         fi
     done
-    echo "$comp_string1 $comp_string2 $2$1"
     echo "$comp_string1 $comp_string2 $2$1">$scr
     ./$scr
     rm -f $tmf $scr
@@ -194,8 +213,15 @@ lst=$(mktemp lst.XXXXXXXXX)
 for i in $fmts; do
     find  -maxdepth 1 -not -name "$prefix*" -name "*.$i" | sed 's|\.\/||g'>>$lst
 done
+if [ "$(cat $lst)" == "" ]; then
+    echo "
+    It seems there is not a single $(echo $fmts | sed 's/ / or /g') file, so there is nothing to process
+    "
+    rm -f $lst
+    exit 0
+fi
 enf=$(wc -l $lst | sed 's/ lst.*//g')
 for (( j=1; j<=$enf; j+=1)); do
     file_processing "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$2" "$3" "$4"
 done
-rm -f $lst tmp.*.mka
+rm -f $lst #tmp.*.mka
