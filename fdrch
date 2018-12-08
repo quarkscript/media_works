@@ -181,7 +181,7 @@ file_processing(){
         #astr=$(cat $tmf | head -n $i | tail -n 1 | sed 's\.*0:\\g' | sed 's\(.*\\g')
         #mediainfo "$1" | grep --regexp=Audio --regexp="Bit depth" | grep Audio -n -m 1 | sed 's/\:.*//g'
         #mediainfo "$1" | grep --regexp=Audio --regexp="Bit depth" | grep -e "Audio #$astr" -n | sed 's/\:.*//g'
-        titles=$(cat $tmf | tail -n +$i | grep --regexp=Audio --regexp=title | head -n 2 | grep title | sed 's/.*\: //g')
+        titles=$(cat $tmf | tail -n +$i | grep --regexp=Audio --regexp=title | head -n 2 | grep title | grep -v --regexp=ubtitle | sed 's/.*\: //g')
         astrem_calc "$1" "$tmf" "$i" "$scr" "$3" "$4" "$5" "$titles"
     done
     echo wait>>$scr
