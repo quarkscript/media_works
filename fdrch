@@ -58,7 +58,7 @@ astrem_calc(){
     astream_sf=fltp
     echo 'File: '$1
     echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Codec: $astream_cod"
-    list_of_ch=$(ffmpeg -layouts -hide_banner | grep $astream_ch | sed "s/$astream_ch//g" | sed 's/ //g' | sed 's/\+/ /g')
+    list_of_ch=$(ffmpeg -layouts -hide_banner | grep "$astream_ch" | grep -v "$astream_ch(" | sed "s/$astream_ch//g" | sed 's/ //g' | sed 's/\+/ /g')
     
     ## some checks ##
     if [ ! -z "$6" ]; then
@@ -202,7 +202,7 @@ file_processing(){
             comp_string2+="-map 0:$ll "
         fi
     done
-    echo "$comp_string1 $comp_string2 $2$1">$scr
+    echo "$comp_string1 $comp_string2 "'"'"$2$1"'"'>$scr
     ./$scr
     rm -f $tmf $scr
 }
