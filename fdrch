@@ -21,13 +21,26 @@ get_ch_gain(){
 }
 
 gainlim(){
-    ## very simple limiter
-    tmp1=$(echo $1 | sed 's/\..*//g')
-    tmp2=$(echo $1 | sed 's/.*\.//g' | sed 's/dB//g')
-    if [ "$tmp2" -ge "$3" ]; then
-        echo "$(($tmp1-$2)).$(($tmp2-$3))dB"
+    if [ "$(echo $1 | sed 's/\..*//g' | sed 's/-//g' )" == "0" ]; then
+        n1=$(echo $1 | sed 's/0\.//g' | sed 's/dB//g' )
     else
-        echo "$(($tmp1-$2-1)).$((10+$tmp2-$3))dB"
+        n1=$(echo $1 | sed 's/\.//g' | sed 's/dB//g' )
+    fi
+    if [ "$(echo $2 | sed 's/\..*//g' | sed 's/-//g' )" == "0" ]; then
+        n2=$(echo $2 | sed 's/0\.//g' | sed 's/dB//g' )
+    else
+        n2=$(echo $2 | sed 's/\.//g' | sed 's/dB//g' )
+    fi
+    if [ "$2" == "0dB" ]; then
+        echo $1
+        exit 0
+    fi
+    s1=$(($n1-($n2)))
+    s2=$((($n1-($n2))/10))
+    if [ "$s2" == "0" ]; then
+        echo "$(echo $(($s1-($s2*10))) | sed 's/[0-9]//g')""$s2"."$(echo $(($s1-($s2*10))) | sed 's/-//g')"dB
+    else
+        echo "$s2"."$(echo $(($s1-($s2*10))) | sed 's/-//g')"dB
     fi
 }
 
@@ -77,7 +90,7 @@ astrem_calc(){
         ;;
         mp3)    astream_cod=libmp3lame
     esac
-
+    
     ## allow to use some experimental codecs
     case $astream_cod in
         dts)    astream_cod+=" -strict -2"
@@ -133,17 +146,17 @@ astrem_calc(){
         if [ "$j1" != "FC" ]&&[ "$7" != "ic" ]||[ "$j1" == "LFE" ]; then
             if [ "$j1" == "LFE" ]&&[ -n "$7" ]; then
             ## limit LFE amplify
-                tmpvar=5
+                tmpvar=5.0dB
             else
-                tmpvar=0
+                tmpvar=0.1dB
             fi
-            filter_string+="[in$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g1" "$tmpvar" '2') [$j1];"
+            filter_string+="[in$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g1" "$tmpvar") [$j1];"
         else
             g1=$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')
             g1=$(echo $g1 | sed 's/ //g')
             g2=$(cat $tmp_tmp | sed "s/.*g2\:$astream_id\:$j1=//g" | sed 's/ .*//g')
             g2=$(echo $g2 | sed 's/ //g')
-            filter_string+="[in$j1]volume=$g1 [l1$j1];[l1$j1]$compressor_settings [l2$j1];[l2$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g2" '0' '2') [$j1];"
+            filter_string+="[in$j1]volume=$g1 [l1$j1];[l1$j1]$compressor_settings [l2$j1];[l2$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g2" '0.1dB') [$j1];"
         fi
     done
     for j1 in $list_of_ch; do
@@ -157,10 +170,7 @@ astrem_calc(){
     else
         astream_inputs=$(($(echo $astream_ch | sed 's/(.*//g' | sed 's/\./\+/g')))
     fi
-#     if [ "$astream_cod" == "eac3" ]; then
-#         fsf="-sample_fmt fltp "
-#     fi
-    
+  
     filter_string+="amerge=inputs=$astream_inputs [Out]" 
     filter_string+='" -map "[Out]"'
     #filter_string+=" -c:a $astream_cod -b:a $astream_bitrate $fsf -vn -sn -dn tmp.$astream_id.mka &"
@@ -178,9 +188,6 @@ file_processing(){
     echo Calculations can be time consuming. Be patient.
     for i in $(cat $tmf | grep "Audio" -n | sed 's/:.*//g'); do
         echo ""
-        #astr=$(cat $tmf | head -n $i | tail -n 1 | sed 's\.*0:\\g' | sed 's\(.*\\g')
-        #mediainfo "$1" | grep --regexp=Audio --regexp="Bit depth" | grep Audio -n -m 1 | sed 's/\:.*//g'
-        #mediainfo "$1" | grep --regexp=Audio --regexp="Bit depth" | grep -e "Audio #$astr" -n | sed 's/\:.*//g'
         titles=$(cat $tmf | tail -n +$i | grep --regexp=Audio --regexp=title | head -n 2 | grep title | grep -v --regexp=ubtitle | sed 's/.*\: //g')
         astrem_calc "$1" "$tmf" "$i" "$scr" "$3" "$4" "$5" "$titles"
     done
