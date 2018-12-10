@@ -4,7 +4,7 @@ echo '
 ## Force Dynamic Range Compression to center cHannel, other channels 
 ## normalized by default. Multichannels and multistreams are supported.
 ## For stereo or mono or downmix to stereo use "fdrc" instead.
-## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg.
+## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg, tee.
 ## There are not all checks, so the probability of failure is high.
 ## Use: ./fdrch or ./fdrch "" [a_codec] [a_bitrate] [i,ic]
 ## a_codec: flac, ac3, eac3, vorbis... a_bitrate: 512, 1536... in kbps
@@ -33,14 +33,14 @@ gainlim(){
     fi
     if [ "$2" == "0dB" ]; then
         echo $1
-        exit 0
-    fi
-    s1=$(($n1-($n2)))
-    s2=$((($n1-($n2))/10))
-    if [ "$s2" == "0" ]; then
-        echo "$(echo $(($s1-($s2*10))) | sed 's/[0-9]//g')""$s2"."$(echo $(($s1-($s2*10))) | sed 's/-//g')"dB
     else
-        echo "$s2"."$(echo $(($s1-($s2*10))) | sed 's/-//g')"dB
+        s1=$(($n1-($n2)))
+        s2=$((($n1-($n2))/10))
+        if [ "$s2" == "0" ]; then
+            echo "$(echo $(($s1-($s2*10))) | sed 's/[0-9]//g')""$s2"."$(echo $(($s1-($s2*10))) | sed 's/-//g')"dB
+        else
+            echo "$s2"."$(echo $(($s1-($s2*10))) | sed 's/-//g')"dB
+        fi
     fi
 }
 
@@ -69,9 +69,10 @@ astrem_calc(){
     astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
     astream_bitrate=$(echo $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
     astream_sf=fltp
-    echo 'File: '$1
-    echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Codec: $astream_cod"
+    echo 'File: '$1 |& tee -a calcs.log
+    echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Codec: $astream_cod" |& tee -a calcs.log
     list_of_ch=$(ffmpeg -layouts -hide_banner | grep "$astream_ch" | grep -v "$astream_ch(" | sed "s/$astream_ch//g" | sed 's/ //g' | sed 's/\+/ /g')
+    echo $list_of_ch >>calcs.log
     
     ## some checks ##
     if [ ! -z "$6" ]; then
@@ -90,6 +91,13 @@ astrem_calc(){
         ;;
         mp3)    astream_cod=libmp3lame
     esac
+    
+#     ## customize bitrate
+#     if [ "$astream_id" == "1" ]||[ "$astream_id" == "2" ]; then
+#         astream_bitrate=282k
+#     else
+#         astream_bitrate=512k
+#     fi
     
     ## allow to use some experimental codecs
     case $astream_cod in
@@ -176,7 +184,9 @@ astrem_calc(){
     #filter_string+=" -c:a $astream_cod -b:a $astream_bitrate $fsf -vn -sn -dn tmp.$astream_id.mka &"
     filter_string+=" -c:a $astream_cod -b:a $astream_bitrate $fsf""-channel_layout "'"'"$astream_ch"'"'" -vn -sn -dn tmp.$astream_id.mka &"
 
+    cat $tmp_tmp >>calcs.log
     rm -f $tmp_tmp
+    echo "$filter_string">>calcs.log
     echo "$filter_string">>$4
 }
 
@@ -209,6 +219,7 @@ file_processing(){
             comp_string2+="-map 0:$ll "
         fi
     done
+    echo "$comp_string1 $comp_string2 "'"'"$2$1"'"'>>calcs.log
     echo "$comp_string1 $comp_string2 "'"'"$2$1"'"'>$scr
     ./$scr
     rm -f $tmf $scr
