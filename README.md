@@ -7,7 +7,7 @@
 - [**fdrc**](fdrc) - "force dynamic range compression" makes the sound of video files in the format *.mkv or *.mp4 louder, but not an  equivalent to sources, so it suitable for movies and cartoons, but not for concerts and music. This is best used for stereo channels or downmix to stereo.
 [Video demonstration](http://www.youtube.com/watch?v=PAv4LF05Bes)
 
-- [**fdrch**](fdrch) - "Force Dynamic Range Compression to center cHannel" makes the sound of video files in the format *.mkv louder. This is best used for multichannel audio streams with a center channel (FC) [Demonstration](fdrch_demo.gif)
+- [**fdrch**](fdrch) or [**fdrch+**](fdrch+) - "Force Dynamic Range Compression to center cHannel" makes the sound of video files in the format *.mkv louder. This is best used for multichannel audio streams with a center channel (FC) [Demonstration](fdrch_demo.gif)
 
 - [**tempo**](tempo) - shell script that allow to "overclock" or "underclock" speed of audio files
 
