@@ -1,0 +1,56 @@
+#!/bin/bash
+## Splitting one audio into separate flac files corresponding to the CUE
+## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg.
+## Place to dir where located *.cue and corresponding audio, then run
+## No any checks, no any guarantees. Author Andrew S. License GPL
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
+
+splitit(){
+    metadatalist="GENRE DATE DISCID COMMENT PERFORMER TITLE"
+    filename=$(cat "$1" | grep "FILE" -n -m 1 | sed 's/.*FILE "//g' | sed 's/".*//g' | tr -d '\r')
+    numline=$(cat "$1" | grep "FILE" -n -m 1 | sed 's/\:.*//g' | tr -d '\r')
+    metadata=""
+    for bb in $metadatalist; do
+        tmp=$(cat "$1" | head -n $numline | grep "$bb" | sed "s/.*$bb //" | sed 's/"//g' | tr -d '\r')
+        if [ -n "$tmp" ]; then
+            if [ "$bb" == "TITLE" ]; then bb="ALBUM"; fi
+            if [ "$bb" == "PERFORMER" ]; then bb="ARTIST"; fi
+            metadata+="-metadata $(echo $bb | tr '[A-Z]' '[a-z]')="
+            metadata+='"'"$tmp"'" '
+        fi
+    done
+    scr=$(mktemp tmp.XXXXXXXX)
+    sp=$(cat "$1" | grep "TRACK" -n -m 1 | sed 's/\:.*//g' | tr -d '\r')
+    tracks=$(cat "$1" | grep "TRACK" -n | sed 's/\:.*//g' | tr -d '\r')
+    for tt in $tracks; do
+        startpoint="$(cat "$1" | tail -n +$tt | grep INDEX -n -m 1 | sed 's/.* //g' | tr -d '\r')"
+        endpoint="$(cat "$1" | tail -n +$tt | grep INDEX -n -m 2 | grep -v "$startpoint" | sed 's/.* //g' | tr -d '\r')"
+        eph="$(cat "$1" | tail -n +$tt | grep TRACK -n -m 2 | grep -v "1:" | sed 's/: .*//g' | tr -d '\r')"
+        if [ -z "$eph" ]; then eph=$(cat "$1" | tail -n +$tt | wc -l); fi
+        trackno="$(cat "$1" | tail -n +$tt | head -n 1 | sed 's/.*TRACK //g' | sed 's/ .*//g' | tr -d '\r')"
+        metatrack="-metadata track=$trackno "
+        title="$(cat "$1" | tail -n +$tt | head -n "$eph" | grep TITLE | sed 's/.*TITLE //g' | sed 's/"//g' | tr -d '\r')"
+        if [ -n "title" ]; then 
+            metatrack+="-metadata title="
+            metatrack+='"'"$title"'" '
+        fi
+        spms=$(echo $startpoint | sed 's/[0-9][0-9]://g')
+        sp=$((10#$(echo $startpoint | sed "s/:$spms//g" | sed 's/:/*60+10#/g'))).$spms
+        if [ -z "$endpoint" ]; then
+            echo "ffmpeg" -i '"'$filename'"' -ss $sp $metadata $metatrack '"'"$trackno"_"$title".flac'"' "&" >>$scr
+        else
+            epms=$(echo $endpoint | sed 's/[0-9][0-9]://g')
+            ep=$((10#$(echo $endpoint | sed "s/:$epms//g" | sed 's/:/*60+10#/g'))).$epms
+            echo "ffmpeg" -i '"'$filename'"' -ss $sp -to $ep $metadata $metatrack '"'"$trackno"_"$title".flac'"' "&" >>$scr
+        fi
+    done
+    echo wait >>$scr
+    chmod +x $scr
+    ./$scr
+    rm -f $scr
+}
+
+for ll in *.cue; do
+    splitit "$ll"
+done
