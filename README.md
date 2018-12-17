@@ -6,7 +6,7 @@
 
 - [**mpeh**](mpeh) - experimental helper script for x264 multi-pass encoding, it allow to find a "high motion" zones and increase bitrate of them
 
-##### Audio streams
+##### Audio streams in video files
 
 - [**fdrc**](fdrc) - "force dynamic range compression" makes the sound of video files in the format *.mkv or *.mp4 louder, but not an  equivalent to sources, so it suitable for movies and cartoons, but not for concerts and music. This is best used for stereo channels or downmix to stereo. [Video demonstration](http://www.youtube.com/watch?v=PAv4LF05Bes)
 
