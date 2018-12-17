@@ -21,7 +21,6 @@ splitit(){
         fi
     done
     scr=$(mktemp tmp.XXXXXXXX)
-    sp=$(cat "$1" | grep "TRACK" -n -m 1 | sed 's/\:.*//g' | tr -d '\r')
     tracks=$(cat "$1" | grep "TRACK" -n | sed 's/\:.*//g' | tr -d '\r')
     for tt in $tracks; do
         startpoint="$(cat "$1" | tail -n +$tt | grep INDEX -n -m 1 | sed 's/.* //g' | tr -d '\r')"
