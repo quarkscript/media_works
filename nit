@@ -15,6 +15,8 @@ echo '
 ## -h or -help gives this small help
 ## There are not all checks, so the probability of failure is high.
 ## Author Andrew S. License GPLv2 Tested with ffmpeg 4.0.2 
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
 '; exit 0 ; fi
 inargs=$(echo $@ | sed 's/,//g' | sed 's/"//g' | sed "s/'//g")
 echo '  Prepare:'
@@ -130,15 +132,22 @@ normalize_it() {
             cod=$2
         fi
         if [ ! -z "$4" ]; then
-            bitrate=$2
+            bitrate=$4
         fi
         if [ ! -z "$3" ]; then
             fr=$3
         fi
-        if [ ! -z "$2" ]; then
-            outfile="$5${filename%.*}.$2"
+        if $(echo $filename | grep -q --regexp="/"); then
+            fnt=$(echo $filename | sed 's/.*\///g')
+            filepath=$(echo $filename | sed "s/$fnt//g")
         else
-            outfile="$5$filename"
+            filepath=""
+            fnt="$filename"
+        fi
+        if [ ! -z "$2" ]; then
+            outfile="$filepath$5${fnt%.*}.$2"
+        else
+            outfile="$filepath$5$fnt"
         fi
         ampl=$(ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
         if [ "$cod" == "mp3" ]; then
