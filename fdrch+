@@ -65,9 +65,10 @@ ming1(){
 }
 
 showprogress(){
+    sleep 10
     ## this function is way too expensive, don't decrease timestep less than 5 second
     if $(ls | grep -q stream_tmp_data. ); then
-        runtime=0
+        runtime=10
         timestep=10
         totaltime=$(("((10#"$(cat $1 | grep Duration -m 1 | sed 's/,.*//g' | sed 's/.*\: //g' | sed 's/\:/)\*60+10#/g' | sed 's/\..*//g')))
         while $(ls | grep -q stream_tmp_data. ); do
