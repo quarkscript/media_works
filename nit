@@ -170,15 +170,15 @@ normalize_it() {
             else
                 q=10
             fi
-            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz -c:a libvorbis -aq $q -f oga "$outfile"
+            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libvorbis -aq $q -f oga "$outfile"
         elif [ "$cod" == "opus" ]; then
-            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz -c:a libopus -b:a "$bitrate"k "$outfile"
+            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libopus -b:a "$bitrate"k "$outfile"
         elif [ "$cod" == "flac" ]; then
-            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz -c:a flac -compression_level 8 "$outfile"
+            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 "$outfile"
         elif [ "$cod" == "wav" ]; then
-            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz "$outfile"
+            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr "$outfile"
         else
-            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz -b:a "$bitrate"k "$outfile"
+            ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -b:a "$bitrate"k "$outfile"
         fi
     done
 }
