@@ -1,0 +1,177 @@
+#!/bin/bash
+if [ -z "$1" ]||[ "$1" == "help" ]||[ "$1" == "--help" ]||[ "$1" == "-h" ]; then
+echo " 
+## Change the Speed of Video Cuts. Video and audio will be reencoded.
+## Will be processed *.mkv and *.mp4 files from current folder.
+## Req. bash-like shell, grep, sed, head, tail, wc, find, ffmpeg, mediainfo
+## Multistreams are not supported, i.e. single video + single audio
+## By default '-c:v libx264 -crf 20 -b:a 320k -c:a aac'     Use: 
+## $0 speeds timestamps filename vid_enc_set vid_filt aud_enc_set
+## all params except first are optional. 'vid_filt' must start from ','
+## speeds '1.5 2.7 0.2' req. timestamps like '00:00:10.234 00:00:20.927'
+## There are not all checks, so the probability of failure is high
+## Author Andrew S. License GPL  Tested with ffmpeg 4.1 and tst.mkv
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
+"; exit 1; fi
+
+num_1=$(($(echo $1 | sed '1s/[^ \t]//g' | wc -c)-1))
+num_2=$(($(echo $2 | sed '1s/[^ \t]//g' | wc -c)-1))
+
+if [ "$num_1" != 0 ]&&[ -z "$2" ]; then
+echo '
+Error! More than a single "speed" require a "timestamps" params'
+$0; exit 1; fi
+
+if [ "$num_1" != 0 ]&&[ "$num_1" != "$(($num_2+1))" ]||([ "$num_1" -eq 0 ]&&[ ! -z "$2" ]); then
+echo '
+Error! "Number of speeds" must be equal to 1+"number of timestamps"'
+$0; exit 1; fi
+
+afilter_gen(){
+    integer=$(echo $1 | sed 's/\..*//')
+    if $(echo $1 | grep [.] -q); then
+        fraction=$(echo $1 | sed 's/.*\.//')
+    else
+        fraction=0
+    fi
+    if [ "$integer" -ge 1 ]; then
+        cn=0
+        while [ "$((10**$cn))" -le "$integer" ]; do
+            integer=$(($integer*10/2))
+            fraction=$(($fraction*10/2))
+            cn=$(($cn+1))
+        done
+        for ((tt=1;tt<$cn;tt+=1)); do af+="atempo=2.0,"; done
+        tv1=$(($integer*2+$fraction/5))
+        tv2=$(($tv1/(10**cn)))
+        echo "$af"atempo=$tv2.$(echo " $tv1" | sed 's/ 1//g')
+    else
+        echo atempo=$1
+    fi
+}
+
+gen_and_run_scr(){
+    fintmp=$(mktemp XXXXXXXXX.tmp)
+    
+    ## get info
+    mediainfo "$1">$fintmp
+    vidw=$(cat $fintmp | grep Width | sed -e 's/\://g' | sed -e 's/Width//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+    vidh=$(cat $fintmp | grep Height | sed -e 's/\://g' | sed -e 's/Height//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+    audfr=$(cat $fintmp | grep "Sampling rate" | sed 's/ kHz.*//g' | sed 's/.* //g' | sed 's/\.//g')"00"
+    ##
+    #ffmpeg -i "$1" -hide_banner 2>$fintmp
+    #vidw=$(cat $fintmp | grep [0-9]x[1-9] | sed 's/x[1-9].*//g' | sed 's/.* //g')
+    #vidh=$(cat $fintmp | grep [0-9]x[1-9] | sed 's/.*[0-9]x//g' | sed 's/ .*//g')
+    #audfr=$(cat $fintmp | grep Hz | sed 's/ Hz.*//g' | sed 's/.* //g')
+    ##
+    #echo $vidw $vidh $audfr
+    #exit 0
+    
+    proc_scr=$(mktemp XXXXXX.scr)
+
+    ## default encoders and filters settings
+    if [ -z "$6" ]; then
+        video_encoder_string='-c:v libx264 -crf 20 '
+    else
+        video_encoder_string="$6"
+    fi
+    if [ -z "$7" ]; then
+        video_filters_string='' 
+    else
+        video_filters_string="$7"
+    fi
+    if [ -z "$8" ]; then
+        audio_encoder_string='-b:a 320k -c:a aac'
+    else
+        audio_encoder_string="$8"
+    fi
+    
+    ## gen processing script
+    count=1
+    if [ ! -z "$4" ]; then
+        startpoint=00:00:00.000
+        for i in $4; do
+            echo "
+            runfunc$count(){
+            ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
+            ffmpeg -hide_banner -i tmp.$count.wav -af $count@afilter -c:a pcm_f32le tmp2.$count.wav
+            ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+            }
+            runfunc$count &
+            ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
+            wait
+            ffmpeg -hide_banner -i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0 t.$count.mkv
+            rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
+            count=$(($count+1))
+            startpoint=$i
+        done        
+        echo "
+        runfunc$count(){
+        ffmpeg -hide_banner -ss $startpoint -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
+        ffmpeg -hide_banner -i tmp.$count.wav -af $count@afilter -c:a pcm_f32le tmp2.$count.wav
+        ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+        }
+        runfunc$count &
+        ffmpeg -hide_banner -ss $startpoint -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
+        wait
+        ffmpeg -hide_banner -i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0 t.$count.mkv
+        rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
+    else
+        echo "
+        runfunc(){
+        ffmpeg -hide_banner -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
+        ffmpeg -hide_banner -i tmp.$count.wav -af $count@afilter -c:a pcm_f32le tmp2.$count.wav
+        ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+        }
+        runfunc &
+        ffmpeg -hide_banner -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
+        wait
+        ffmpeg -hide_banner -i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0 t.$count.mkv
+        rm -f tmp.$count.mkv tmp.$count.mka tmp.$count.wav tmp2.$count.wav ">>$proc_scr
+    fi
+    count=1
+    tmp1=$(mktemp XXXXXXXXXXXXXXX.tmp)
+    conclist=$(mktemp XXXXXXXXX.lst.tmp)
+    for i in $3; do
+        cat $proc_scr | sed "s/speed$count@/$i/g" >$tmp1
+        mv -f $tmp1 $proc_scr
+        audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
+        cat $proc_scr | sed "s/arate$count@/$(($audfr*$audio_freq_mult))/g">$tmp1
+        mv -f $tmp1 $proc_scr
+        cat $proc_scr | sed "s/$count@afilter/$(afilter_gen $i)/g">$tmp1
+        mv -f $tmp1 $proc_scr
+        echo file "t.$count.mkv">>$conclist
+        count=$(($count+1))
+    done
+    if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
+        echo ffmpeg -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
+    else
+        echo "mv -f $(cat $conclist | sed 's/file //g') '$2$1'" >>$proc_scr
+    fi
+    
+    ## run script
+    chmod +x $proc_scr
+    ./$proc_scr
+    rm -f $proc_scr $tmp1 $conclist t.*.mkv
+}
+
+lst=$(mktemp XXXXXX.tmp)
+fmts="mp4 mkv"
+prefix="prcd_"
+if [ -z "$3" ]; then
+    for i in $fmts; do
+        find  -maxdepth 1 -not -name "$prefix*" -name "*.$i" | sed 's|\.\/||g'>>$lst
+    done
+else
+    find  -maxdepth 1 -name "$3" | sed 's|\.\/||g'>>$lst
+fi
+currfile=$(mktemp XXXXXXXX.lstmp)
+enf=$(wc -l $lst | sed "s/ $lst//g")
+if [ "$enf" -lt 1 ]; then echo '
+Nothing to process
+' ; rm -f *.tmp *.lstmp; exit 0; fi
+for (( j=1; j<=$enf; j+=1)); do
+    gen_and_run_scr "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$1" "$2" "$3" "$4" "$5" "$6"
+done
+rm -f *.tmp *.lstmp
