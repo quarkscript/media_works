@@ -70,7 +70,7 @@ gen_and_run_scr(){
     #exit 0
     
     ## chek if audio present
-    if $(echo $audfr | grep -q [1-9][0-9][0-9][0-9][0-9][0-9]) || $(echo $audfr | grep -q [1-9][0-9][0-9][0-9][0-9]); then
+    if $(echo $audfr | grep -q [1-9][0-9][0-9][0-9][0-9][0-9]) || $(echo $audfr | grep -q [1-9][0-9][0-9][0-9][0-9]) || $(echo $audfr | grep -q [1-9][0-9][0-9][0-9]); then
         apresent=1
     else 
         apresent=0
@@ -85,7 +85,7 @@ gen_and_run_scr(){
         video_encoder_string="$6"
     fi
     if [ -z "$7" ]; then
-        video_filters_string=''
+        video_filters_string='' 
     else
         video_filters_string="$7"
     fi
@@ -104,7 +104,7 @@ gen_and_run_scr(){
                 echo "
                 runfunc$count(){
                 ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-                ffmpeg -hide_banner -i tmp.$count.wav -af $count@afilter -c:a pcm_f32le tmp2.$count.wav
+                ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
                 ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
                 }
                 runfunc$count &">>$proc_scr
@@ -124,7 +124,7 @@ gen_and_run_scr(){
             echo "
             runfunc$count(){
             ffmpeg -hide_banner -ss $startpoint -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            ffmpeg -hide_banner -i tmp.$count.wav -af $count@afilter -c:a pcm_f32le tmp2.$count.wav
+            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
             ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc$count &">>$proc_scr
@@ -142,7 +142,7 @@ gen_and_run_scr(){
             echo "
             runfunc(){
             ffmpeg -hide_banner -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            ffmpeg -hide_banner -i tmp.$count.wav -af $count@afilter -c:a pcm_f32le tmp2.$count.wav
+            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
             ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc &">>$proc_scr
@@ -164,10 +164,10 @@ gen_and_run_scr(){
         mv -f $tmp1 $proc_scr
         audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
         afm=$(($audfr*$audio_freq_mult))
-        if [ "$afm" -gt 300000 ]; then afm=300000 ; fi # limit afeq multipl, on higher speed 
+        if [ "$afm" -gt 300000 ]; then afm=300000 ; fi # limit afreq multipl, on higher speeds 
         cat $proc_scr | sed "s/arate$count@/$afm/g">$tmp1
         mv -f $tmp1 $proc_scr
-        cat $proc_scr | sed "s/$count@afilter/$(afilter_gen $i)/g">$tmp1
+        cat $proc_scr | sed "s/afilter$count@/$(afilter_gen $i)/g">$tmp1
         mv -f $tmp1 $proc_scr
         echo file "t.$count.mkv">>$conclist
         count=$(($count+1))
