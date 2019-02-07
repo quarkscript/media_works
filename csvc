@@ -94,7 +94,7 @@ gen_and_run_scr(){
     else
         audio_encoder_string="$8"
     fi
-    
+
     ## gen processing script
     count=1
     if [ ! -z "$4" ]; then
@@ -104,7 +104,7 @@ gen_and_run_scr(){
                 echo "
                 runfunc$count(){
                 ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-                ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
+                ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@  -c:a pcm_f32le tmp2.$count.wav
                 ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
                 }
                 runfunc$count &">>$proc_scr
@@ -124,7 +124,7 @@ gen_and_run_scr(){
             echo "
             runfunc$count(){
             ffmpeg -hide_banner -ss $startpoint -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
+            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@  -c:a pcm_f32le tmp2.$count.wav
             ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc$count &">>$proc_scr
@@ -142,7 +142,7 @@ gen_and_run_scr(){
             echo "
             runfunc(){
             ffmpeg -hide_banner -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
+            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@  -c:a pcm_f32le tmp2.$count.wav
             ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc &">>$proc_scr
@@ -160,15 +160,24 @@ gen_and_run_scr(){
     tmp1=$(mktemp XXXXXXXXXXXXXXX.tmp)
     conclist=$(mktemp XXXXXXXXX.lst.tmp)
     for i in $3; do
-        cat $proc_scr | sed "s/speed$count@/$i/g" >$tmp1
+        if $(echo $i | grep -q '0.'); then flsmo=',minterpolate=mi_mode=blend'; else flsmo=''; fi ## fake slow-mo
+        cat $proc_scr | sed "s/speed$count@/$i$flsmo/g" >$tmp1
         mv -f $tmp1 $proc_scr
-        audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
-        afm=$(($audfr*$audio_freq_mult))
-        if [ "$afm" -gt 300000 ]; then afm=300000 ; fi # limit afreq multipl, on higher speeds 
-        cat $proc_scr | sed "s/arate$count@/$afm/g">$tmp1
-        mv -f $tmp1 $proc_scr
-        cat $proc_scr | sed "s/afilter$count@/$(afilter_gen $i)/g">$tmp1
-        mv -f $tmp1 $proc_scr
+        fract=$(echo $i | sed 's/.*\.//g')
+        if $(echo $i | sed 's/\..*//g' | grep -vq [1-9])&&[ "$fract" -lt "$((8*(10**(${#fract}-1))))" ]; then ## atempo low limit
+            cat $proc_scr | sed "s/-ar arate$count@//g">$tmp1
+            mv -f $tmp1 $proc_scr
+            cat $proc_scr | sed "s/afilter$count@ /asetrate=$(($audfr*fract/(10**(${#fract}))))/g">$tmp1
+            mv -f $tmp1 $proc_scr
+        else
+            audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
+            afm=$(($audfr*$audio_freq_mult))
+            if [ "$afm" -gt 300000 ]; then afm=300000 ; fi ## limit afreq multipl, on higher speed 
+            cat $proc_scr | sed "s/arate$count@/$afm/g">$tmp1
+            mv -f $tmp1 $proc_scr
+            cat $proc_scr | sed "s/afilter$count@ /$(afilter_gen $i)/g">$tmp1
+            mv -f $tmp1 $proc_scr
+        fi
         echo file "t.$count.mkv">>$conclist
         count=$(($count+1))
     done
