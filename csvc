@@ -20,13 +20,13 @@ num_1=$(($(echo $1 | sed '1s/[^ \t]//g' | wc -c)-1))
 num_2=$(($(echo $2 | sed '1s/[^ \t]//g' | wc -c)-1))
 
 if [ "$num_1" != 0 ]&&[ -z "$2" ]; then
-echo '
-Error! More than a single "speed" require a "timestamps" params'
+echo "
+Error! More than a single 'Speed' require a 'Timestamps' params"
 $0; exit 1; fi
 
 if [ "$num_1" != 0 ]&&[ "$num_1" != "$(($num_2+1))" ]||([ "$num_1" -eq 0 ]&&[ ! -z "$2" ]); then
-echo '
-Error! "Number of speeds" must be equal to 1+"number of timestamps"'
+echo "
+Error! $num_1 not equal 1+$num_2 i.e. 'Speeds count' must be equal to 1+'Timestamps count'"
 $0; exit 1; fi
 
 afilter_gen(){
@@ -104,7 +104,7 @@ gen_and_run_scr(){
                 echo "
                 runfunc$count(){
                 ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-                ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@  -c:a pcm_f32le tmp2.$count.wav
+                ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
                 ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
                 }
                 runfunc$count &">>$proc_scr
@@ -124,7 +124,7 @@ gen_and_run_scr(){
             echo "
             runfunc$count(){
             ffmpeg -hide_banner -ss $startpoint -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@  -c:a pcm_f32le tmp2.$count.wav
+            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
             ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc$count &">>$proc_scr
@@ -142,7 +142,7 @@ gen_and_run_scr(){
             echo "
             runfunc(){
             ffmpeg -hide_banner -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@  -c:a pcm_f32le tmp2.$count.wav
+            ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
             ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc &">>$proc_scr
@@ -167,7 +167,7 @@ gen_and_run_scr(){
         if $(echo $i | sed 's/\..*//g' | grep -vq [1-9])&&[ "$fract" -lt "$((8*(10**(${#fract}-1))))" ]; then ## atempo low limit
             cat $proc_scr | sed "s/-ar arate$count@//g">$tmp1
             mv -f $tmp1 $proc_scr
-            cat $proc_scr | sed "s/afilter$count@ /asetrate=$(($audfr*fract/(10**(${#fract}))))/g">$tmp1
+            cat $proc_scr | sed "s/afilter$count@/asetrate=$(($audfr*fract/(10**(${#fract}))))/g">$tmp1
             mv -f $tmp1 $proc_scr
         else
             audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
@@ -175,7 +175,7 @@ gen_and_run_scr(){
             if [ "$afm" -gt 300000 ]; then afm=300000 ; fi ## limit afreq multipl, on higher speed 
             cat $proc_scr | sed "s/arate$count@/$afm/g">$tmp1
             mv -f $tmp1 $proc_scr
-            cat $proc_scr | sed "s/afilter$count@ /$(afilter_gen $i)/g">$tmp1
+            cat $proc_scr | sed "s/afilter$count@/$(afilter_gen $i)/g">$tmp1
             mv -f $tmp1 $proc_scr
         fi
         echo file "t.$count.mkv">>$conclist
@@ -183,8 +183,10 @@ gen_and_run_scr(){
     done
     if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
         echo ffmpeg -hide_banner -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
-    else
+    elif [ "$(echo $1 | sed 's/.*\.//g')" == "mkv" ]; then
         echo "mv -f $(cat $conclist | sed 's/file //g') '$2$1'" >>$proc_scr
+    else
+        echo ffmpeg -hide_banner -i "$(cat $conclist | sed 's/file //g')" -c copy '"'$2$1'"' >>$proc_scr
     fi
     
     ## run script
