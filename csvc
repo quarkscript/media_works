@@ -16,15 +16,15 @@ echo "
 ## https://gitlab.com/quarkscript/media_shell_scripts/
 "; exit 1; fi
 
-num_1=$(($(echo $1 | sed '1s/[^ \t]//g' | wc -c)-1))
-num_2=$(($(echo $2 | sed '1s/[^ \t]//g' | wc -c)-1))
+num_1=0; for i1 in $1; do num_1=$(($num_1+1)); done
+num_2=0; for i2 in $2; do num_2=$(($num_2+1)); done
 
-if [ "$num_1" != 0 ]&&[ -z "$2" ]; then
+if [ "$num_1" -gt 1 ]&&[ -z "$2" ]; then
 echo "
 Error! More than a single 'Speed' require a 'Timestamps' params"
 $0; exit 1; fi
 
-if [ "$num_1" != 0 ]&&[ "$num_1" != "$(($num_2+1))" ]||([ "$num_1" -eq 0 ]&&[ ! -z "$2" ]); then
+if [ "$num_1" -ge 1 ]&&[ "$num_1" != "$(($num_2+1))" ]; then
 echo "
 Error! $num_1 not equal 1+$num_2 i.e. 'Speeds count' must be equal to 1+'Timestamps count'"
 $0; exit 1; fi
@@ -36,6 +36,7 @@ afilter_gen(){
     else
         fraction=0
     fi
+    fr_s_mi_one=$((${#fraction}-1))
     if [ "$integer" -ge 1 ]; then
         cn=0
         while [ "$((10**$cn))" -le "$integer" ]; do
@@ -44,8 +45,8 @@ afilter_gen(){
             cn=$(($cn+1))
         done
         for ((tt=1;tt<$cn;tt+=1)); do af+="atempo=2.0,"; done
-        tv1=$(($integer*2+$fraction/5))
-        tv2=$(($tv1/(10**cn)))
+        tv1=$(($integer*2*(10**$fr_s_mi_one)+$fraction/5))
+        tv2=$(($tv1/(10**($cn+$fr_s_mi_one))))
         echo "$af"atempo=$tv2.$(echo " $tv1" | sed 's/ 1//g')
     else
         echo atempo=$1
@@ -181,6 +182,7 @@ gen_and_run_scr(){
         echo file "t.$count.mkv">>$conclist
         count=$(($count+1))
     done
+    
     if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
         echo ffmpeg -hide_banner -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
     elif [ "$(echo $1 | sed 's/.*\.//g')" == "mkv" ]; then
@@ -188,10 +190,16 @@ gen_and_run_scr(){
     else
         echo ffmpeg -hide_banner -i "$(cat $conclist | sed 's/file //g')" -c copy '"'$2$1'"' >>$proc_scr
     fi
-    
     ## run script
     chmod +x $proc_scr
     ./$proc_scr
+    failtest=$(cat $conclist | sed "s/file//g")
+    for ft in $failtest; do 
+        if [ ! -f "$ft" ]; then 
+        echo '
+        Some parts are not processed... Encoding stops. Some intermediate files will not be deleted.'
+        exit 1; fi
+    done
     rm -f $proc_scr $tmp1 $conclist t.*.mkv
 }
 
