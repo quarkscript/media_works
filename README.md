@@ -6,7 +6,7 @@
 
 - [**mpeh**](mpeh) - experimental helper script for x264 multi-pass encoding, it allow to find a "high motion" zones and increase bitrate of them
 
-- [**csvc**](csvc) - changing the speed for video file or for cuts in video file during reencoding
+- [**csvc**](csvc) - changing the speed for video file or for cuts in video file during reencoding. A demonstration of the work of this script can be found in the [playlist](https://www.youtube.com/playlist?list=PLCEQBF42fgWP4pWrBDskJCboBldHUo8ym), except for the first video from the playlist.
 
 ##### Audio streams in video files
 
