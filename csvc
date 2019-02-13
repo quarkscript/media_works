@@ -182,7 +182,6 @@ gen_and_run_scr(){
         echo file "t.$count.mkv">>$conclist
         count=$(($count+1))
     done
-    
     if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
         echo ffmpeg -hide_banner -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
     elif [ "$(echo $1 | sed 's/.*\.//g')" == "mkv" ]; then
@@ -190,16 +189,19 @@ gen_and_run_scr(){
     else
         echo ffmpeg -hide_banner -i "$(cat $conclist | sed 's/file //g')" -c copy '"'$2$1'"' >>$proc_scr
     fi
+    
     ## run script
     chmod +x $proc_scr
     ./$proc_scr
     failtest=$(cat $conclist | sed "s/file//g")
-    for ft in $failtest; do 
-        if [ ! -f "$ft" ]; then 
-        echo '
-        Some parts are not processed... Encoding stops. Some intermediate files will not be deleted.'
-        exit 1; fi
-    done
+    if [ "$(echo $failtest | grep -c mkv)" -gt 1 ]; then
+        for ft in $failtest; do 
+            if [ ! -f "$ft" ]; then 
+            echo '
+            Some parts are not processed... Encoding stops. Some intermediate files will not be deleted.'
+            exit 1; fi
+        done
+    fi
     rm -f $proc_scr $tmp1 $conclist t.*.mkv
 }
 
