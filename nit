@@ -3,16 +3,16 @@ if ($(echo $@ | grep -q --regexp="-h" --regexp="help")); then
 echo '
 ## nit - "normalize it" (bash script that normalize the volume of audio files)
 ## Required: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find
-## Use: ./nit [audio file extensions] [options] [pref:new_prefix]
+## Use: ./nit [audio file extensions] [options] [pref:newfileprefix]
 ## [audio file extensions] are like: mp3, wav, ogg and so on. (mp3 by default)
-## [options] are like: 44100hz, 320kbps, f-ogg, f-mp3, f-wav, f-flac, -r
+## [options] are like: 44100hz, 320kbps, [f-ogg, f-mp3, f-wav, f-flac], -r
 ## -r means recursive (by default is not)
 ## f-* means forced output format to one of those [ogg mp3 wav flac]
 ## *hz means output frequency in Hz
 ## *kbps means bitrate in kbps
-## pref:newfileprefix must be the last parameter on the line
+## pref:newfileprefix must be the last parameter on the line, empty is allowed
 ## It are all optional, by default will be used detected parameters
-## -h or -help gives this small help
+## -h or help gives this small help
 ## There are not all checks, so the probability of failure is high.
 ## Author Andrew S. License GPLv2 Tested with ffmpeg 4.0.2 
 ## https://github.com/quarkscript/media_works
@@ -78,14 +78,20 @@ else
     mdp="-maxdepth 1"
 fi
 prefix=$(echo $inargs | sed "s/.*pref\://g")
-if [ "$(echo $inargs | grep -c --regexp='pref:')" -gt 0 ] && [ ! -z "$prefix" ]; then
+#if [ "$(echo $inargs | grep -c --regexp='pref:')" -gt 0 ] && [ ! -z "$prefix" ]; then
+## allow empty prefix, no overwrite for duplicates
+if [ "$(echo $inargs | grep -c --regexp='pref:')" -gt 0 ]; then
     echo "Normalized files prefix specified to '$prefix'"
 else
     prefix=n_
     echo "Default normalized files prefix is '$prefix'"
 fi
 for iii in $extns; do
+    if [ -z "$prefix" ]; then
+        find  $mdp -name "*.$iii" | sed 's|\.\/||g'>>list.tmp
+    else
         find  $mdp -not -name "$prefix*" -name "*.$iii" | sed 's|\.\/||g'>>list.tmp
+    fi
 done
 filesnum=$(wc -l list.tmp | sed 's/ list.tmp//g')
 if [ "$filesnum" -eq "0" ]; then
@@ -114,6 +120,20 @@ else
     echo "$filesnum files will be normalized at all"
 fi
 echo "  Processing:"
+gainlim(){
+    limvar=$(echo $1 | sed 's/dB//g')
+    limval=$(echo $2 | sed 's/dB//g')
+    fracvar=$(echo $limvar | sed 's/.*\.//g')
+    fracval=$(echo $limval | sed 's/.*\.//g')
+    if [ "${#fracvar}" -gt "${#fracval}" ]; then fracpow=${#fracvar} ; else fracpow=${#fracval} ; fi
+    tmprez=$((10#$(echo $limvar | sed 's/\..*//g')*(10**$fracpow)+10#$fracvar*(10**($fracpow-${#fracvar}))-(10#$(echo $limval | sed 's/\..*//g')*(10**$fracpow)+10#$fracval*(10**($fracpow-${#fracval})))))
+    if $(echo $tmprez | grep -q --regexp='-'); then 
+        echo 0.0 
+    else 
+        rezfract=$(echo $((10#$tmprez-(10#$tmprez/(10**$fracpow))*(10**$fracpow))) | sed 's/-//g')
+        echo $tmp$(echo $(($tmprez/(10**$fracpow))) | sed 's/-//g').$(echo $((10**($fracpow-${#rezfract}))) | sed 's/1//g')"$rezfract"
+    fi
+}
 normalize_it() {
     flsnum=$(wc -l $1 | sed "s/ $1//g")
     for (( cycle_list=1; cycle_list <= $flsnum; ++cycle_list )); do
@@ -149,7 +169,8 @@ normalize_it() {
         else
             outfile="$filepath$5$fnt"
         fi
-        ampl=$(ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+        ## amplifyer limit - 0.001dB applied only if it less then generateg gain
+        ampl=$(gainlim $(ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 0.001dB)
         if [ "$cod" == "mp3" ]; then
             ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz -c:a libmp3lame -b:a "$bitrate"k "$outfile"
         elif [ "$cod" == "vorbis" ] || [ "$cod" == "ogg" ]; then
