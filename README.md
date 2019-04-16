@@ -22,6 +22,8 @@
 
 - [**tempo**](tempo) - shell script that allow to "overclock" or "underclock" speed of audio files
 
+[**msslib**](msslib) - all previous scripts in single file
+
 **More simpler scripts:**
 
 - [**normnconv**](normnconv) - normalize audio/music during convert it to *.ogg 
