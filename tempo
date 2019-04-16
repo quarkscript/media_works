@@ -1,7 +1,7 @@
 #!/bin/bash
 if [ -z "$1" ]; then 
     echo 'Fail: Missing input argument - input audio format.. i.e. ./tempo "*.mp3"
-    
+                                                                        "" requred
 ## Normalizing, converting to ogg and change speed of music from 0.5 to 2.0
 ## No any checks, no any guarantees. By default speed is 1.5 
 ## Use: ./tempo "*.format" or ./tempo "*.format" "speed" 
@@ -23,7 +23,7 @@ afc+="dB"
 # afc+=",atempo=$2"
 # ffmpeg -i "$1" -acodec libvorbis -aq 9 -ar 48000 -f oga $afc "$2"X"${1%.*}.ogg" -hide_banner
 ## It seems atempo drops some frames and made poor quality, there is another option but it affects pitch too
-arate=$(ffmpeg -hide_banner -i "$1" -f null /dev/null 2>&1 |  grep "Audio" | sed -e 's/ Hz.*//g' | sed -e 's/.*, //g')
+arate=$(ffmpeg -hide_banner -i "$1" -f null /dev/null 2>&1 |  grep "Audio" -m 1 | sed -e 's/ Hz.*//g' | sed -e 's/.*, //g')
 rate=$(echo $arate | sed 's/.* //g')
 ffmpeg -i "$1" -af asetrate=$(($rate*$(echo $tempo_factor | sed -e 's/\.//g')/10)) "${1%.*}.wav" -hide_banner
 ffmpeg -i "$1" -i "${1%.*}.wav" -map_metadata 0 -map 1 -ar $rate -acodec libvorbis -aq 9 -f oga $afc "$2"X"${1%.*}.ogg" -hide_banner
