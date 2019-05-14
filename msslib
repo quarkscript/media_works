@@ -120,12 +120,13 @@ echo "
 ## Change the Speed of Video Cuts during re-encoding. (mkv,mp4)
 ## Req. bash-like shell, grep, sed, head, tail, wc, find, ffmpeg, mediainfo
 ## Multistreams are not supported, i.e. single video + single audio
-## Use: $0 'csvc' 'speeds' 'timestamps' 'filename' 'vid_enc_set' 'vid_filt' 'aud_enc_set'
+## Use: $0 'csvc' 'speeds' 'timestamps' 'filename' 'vid_enc_set' 'vid_filt' 'aud_enc_set' 'moff'
 ## All params except 'speeds' are optional. 'vid_filt' must start from ',' By default:
 ## vid_enc_set=$(cat $0 | grep 'c:v' | grep video_encoder_string | grep -v grep | sed 's/.*g=//g') 
 ## vid_filt=$(cat $0 | grep video_filters_string= | grep -v --regexp='grep' --regexp='$7' | sed 's/.*g=//g') 
 ## aud_enc_set=$(cat $0 | grep 'c:a' | grep audio_en | grep -v grep | sed 's/.*g=//g')     
 ## speeds like '1.5 2.7 0.2' req. timestamps like '00:00:10.234 00:00:20.927'
+## moff - muxing off - process ends after last cut of first file
 ## There are not all checks, so the probability of failure is high
 ## Author Andrew S. License GPL  Tested with ffmpeg 4.1 and tst.mkv
 ## https://github.com/quarkscript/media_works
@@ -144,6 +145,7 @@ if [ "$num_1" -ge 1 ]&&[ "$num_1" != "$(($num_2+1))" ]; then
 echo "
 Error! $num_1 not equal 1+$num_2 i.e. 'Speeds count' must be equal to 1+'Timestamps count'"
 $0; exit 1; fi
+if [ ! -z "$7" ]; then moff=1; fi
 
 afilter_gen(){
     integer=$(echo $1 | sed 's/\..*//')
@@ -298,6 +300,7 @@ gen_and_run_scr(){
         echo file "t.$count.mkv">>$conclist
         count=$(($count+1))
     done
+            if [ -z "$moff" ]; then
     if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
         echo $ffmpeg -hide_banner -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
     elif [ "$(echo $1 | sed 's/.*\.//g')" == "mkv" ]; then
@@ -305,10 +308,15 @@ gen_and_run_scr(){
     else
         echo $ffmpeg -hide_banner -i "$(cat $conclist | sed 's/file //g')" -c copy '"'$2$1'"' >>$proc_scr
     fi
+            fi
     
     ## run script
     chmod +x $proc_scr
     ./$proc_scr
+    if [ ! -z "$moff" ]; then
+        rm -f $proc_scr $tmp1 $conclist *.tmp *.lstmp
+        exit 0
+    fi
     failtest=$(cat $conclist | sed "s/file//g")
     if [ "$(echo $failtest | grep -c mkv)" -gt 1 ]; then
         for ft in $failtest; do 
@@ -336,6 +344,7 @@ enf=$(wc -l $lst | sed "s/ $lst//g")
 if [ "$enf" -lt 1 ]; then echo '
 Nothing to process
 ' ; rm -f *.tmp *.lstmp; exit 0; fi
+if [ ! -z "$moff" ]; then enf=1; fi
 for (( j=1; j<=$enf; j+=1)); do
     gen_and_run_scr "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$1" "$2" "$3" "$4" "$5" "$6"
 done
@@ -1225,30 +1234,36 @@ rm -f thread*list.tmp list.tmp
 
 
 nvenc2mp4(){
-if [ ! -z "$1" ] || [ ! -z "$2" ] && [ "$2" != "no" ]; then echo "
+if [ ! -z "$1" ]; then echo "
  Fast transcoding (mkv webm flv ts avi) to compatible format with an old TV
  i.e. *.mp4 {H264 =<30fps =<1920x1080 + aac normalized drc}
  Req: bash, hash, grep, head, tail, wc, mediainfo, ffmpeg with nvenc support,
  nvidia GT 630 or better (except 1030) and installed proprietary Nvidia drivers
- Use: $0 nvenc2mp4 OR $0 nvenc2mp4 '' 'no'
- 'no' means do not use dynamic range compression for audio
+ Use: $0 nvenc2mp4                                      OR
+ $0 nvenc2mp4 '' '[no,novp]' '50M' 'mkv webm flv ts avi'
+ 'no' - do not use dynamic range compression for audio volume
+ 'novp' - do not process audio volume
  Author Andrew S. License GPL
  https://github.com/quarkscript/media_works
  https://gitlab.com/quarkscript/media_shell_scripts
 " ;exit 0 ;fi
-if [ -z "$2" ]; then
-    use_drc="yes"
-elif [ "$2" == "no" ]; then
-    use_drc="no"
-fi
 ##
+## set custom video bitrate
+if [ ! -z "$3" ]
+then v_rate="-b:v $3"
+else v_rate=""
+fi
 ## max output video resolution
 rvw=1920
 rvh=1080
 ## max output video frame rate
 mvfr=30
 ## extensions
-extns="mkv webm flv ts avi"
+if [ -z "$4" ]; then
+    extns="mkv webm flv ts avi"
+else 
+    extns="$4"
+fi
 ##
 rm -f list.tmp fn.tmp finf.tmp
 for j in $extns; do
@@ -1277,6 +1292,7 @@ else
                     fi
                     ## for list of video codec params execute from shell "ffmpeg -help encoder=nvenc_h264"
                     param+='-c:v h264_nvenc -coder cabac -preset hq -rc vbr_hq  '
+                    param+="$v_rate "
                     if [ "$vidfps" -gt "$(($mvfr+1))" ]; then
                             param+="-r $mvfr "
                     fi
@@ -1285,16 +1301,24 @@ else
                     else
                             audparam=""
                     fi
-                    if [ "$use_drc" == "yes" ]; then
+                    if [ -z "$2" ]; then
                         audparam+="-af acompressor=link=maximum:ratio=10:attack=0.1:release=2000:detection=peak:threshold=-20dB"
                         echo DRC is on, audio gain will be bigger
-                    else
+                    elif [ "$2" == "no" ]; then
                         audparam+="-af acopy"
                         echo DRC is off
+                    elif [ "$2" != "novp" ]; then
+                        echo Wrong parameter! $2
+                        exit 1
                     fi
-                    echo Calculating audio gain...
-                    vol_up=$($ffmpeg -i "$i" -hide_banner $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
-                    echo ... $vol_up dB
+                    if [ "$2" != "novp" ]; then
+                        echo Calculating audio gain...
+                        vol_up=$($ffmpeg -i "$i" -hide_banner $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+                        echo ... $vol_up dB
+                    else 
+                        audparam+="-af acopy"
+                        vol_up=0
+                    fi
                     if [ "$(echo $vol_up | sed -e 's/\.//g')" -gt "639" ]; then 
                             vol_up=64
                     fi
@@ -1379,8 +1403,16 @@ wait
 
 if $(echo $1 | grep -q --regexp="ffmpeg="); then
     ffmpeg=$(echo "$1" | sed 's/ffmpeg=//g')
-    $2 "$3" "$4" "$5" "$6" "$7" "$8" "$9"
+    #$2 "$3" "$4" "$5" "$6" "$7" "$8" "$9"
+    st_in=2
 else
     ffmpeg=ffmpeg
-    $1 "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    #$1 "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+    st_in=1
 fi
+inpar=$#
+exefunc=''
+for ((c_y=$st_in; c_y<=$inpar; c_y+=1)); do
+  exefunc+='"${'$c_y'}" '
+done
+eval $exefunc
