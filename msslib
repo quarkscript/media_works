@@ -121,13 +121,15 @@ echo "
 ## Change the Speed of Video Cuts during re-encoding. (mkv,mp4)
 ## Req. bash-like shell, grep, sed, head, tail, wc, find, ffmpeg, mediainfo
 ## Multistreams are not supported, i.e. single video + single audio
-## Use: $0 'csvc' 'speeds' 'timestamps' 'filename' 'vid_enc_set' 'vid_filt' 'aud_enc_set' 'moff'
+## Use: $0 'csvc' 'speeds' 'timestamps' 'filename' 'vid_enc_set' 'vid_filt' 'aud_enc_set' 'cng'
 ## All params except 'speeds' are optional. 'vid_filt' must start from ',' By default:
 ## vid_enc_set=$(cat $0 | grep 'c:v' | grep video_encoder_string | grep -v grep | sed 's/.*g=//g') 
 ## vid_filt=$(cat $0 | grep video_filters_string= | grep -v --regexp='grep' --regexp='$7' | sed 's/.*g=//g') 
 ## aud_enc_set=$(cat $0 | grep 'c:a' | grep audio_en | grep -v grep | sed 's/.*g=//g')     
 ## speeds like '1.5 2.7 0.2' req. timestamps like '00:00:10.234 00:00:20.927'
-## moff - muxing off - process ends after last cut of first file
+## filename may be for example '*.avi', quotes required
+## cng - process only first file , cuts do not glue (if you need to manipulate with cuts)
+## Very high speed or speed more than for example 200 may lead to fail.
 ## There are not all checks, so the probability of failure is high
 ## Author Andrew S. License GPL  Tested with ffmpeg 4.1 and tst.mkv
 ## https://github.com/quarkscript/media_works
@@ -146,7 +148,7 @@ if [ "$num_1" -ge 1 ]&&[ "$num_1" != "$(($num_2+1))" ]; then
 echo "
 Error! $num_1 not equal 1+$num_2 i.e. 'Speeds count' must be equal to 1+'Timestamps count'"
 $0; exit 1; fi
-if [ ! -z "$7" ]; then moff=1; fi
+if [ ! -z "$7" ]; then cng=1; fi
 
 afilter_gen(){
     integer=$(echo $1 | sed 's/\..*//')
@@ -235,7 +237,7 @@ gen_and_run_scr(){
             echo "
             $ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
             wait
-            $ffmpeg -hide_banner $muxcnf t.$count.mkv
+            $ffmpeg -hide_banner $muxcnf cut.$count.mkv
             rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
             count=$(($count+1))
             startpoint=$i
@@ -255,7 +257,7 @@ gen_and_run_scr(){
         echo "
         $ffmpeg -hide_banner -ss $startpoint -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
         wait
-        $ffmpeg -hide_banner $muxcnf t.$count.mkv
+        $ffmpeg -hide_banner $muxcnf cut.$count.mkv
         rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
     else
         if [ "$apresent" -eq 1 ]; then
@@ -273,7 +275,7 @@ gen_and_run_scr(){
         echo "
         $ffmpeg -hide_banner -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
         wait
-        $ffmpeg -hide_banner $muxcnf t.$count.mkv
+        $ffmpeg -hide_banner $muxcnf cut.$count.mkv
         rm -f tmp.$count.mkv tmp.$count.mka tmp.$count.wav tmp2.$count.wav ">>$proc_scr
     fi
     count=1
@@ -290,32 +292,39 @@ gen_and_run_scr(){
             cat $proc_scr | sed "s/afilter$count@/asetrate=$(($audfr*fract/(10**(${#fract}))))/g">$tmp1
             mv -f $tmp1 $proc_scr
         else
-            audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
-            afm=$(($audfr*$audio_freq_mult))
-            if [ "$afm" -gt 300000 ]; then afm=300000 ; fi ## limit afreq multipl, on higher speed 
+            ## ignore afreq multipl on speed more than 90, and increase arate proportional before 90
+            if [ "$i" -gt 90 ]; then 
+                afm=$audfr 
+            else
+                audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
+                afm=$(($audfr*$audio_freq_mult))
+                if [ "$afm" -gt 300000 ]; then afm=300000 ; fi ## limit afreq multipl, on higher speed 
+            fi
             cat $proc_scr | sed "s/arate$count@/$afm/g">$tmp1
             mv -f $tmp1 $proc_scr
             cat $proc_scr | sed "s/afilter$count@/$(afilter_gen $i)/g">$tmp1
             mv -f $tmp1 $proc_scr
         fi
-        echo file "t.$count.mkv">>$conclist
+        echo file "cut.$count.mkv">>$conclist
         count=$(($count+1))
     done
-            if [ -z "$moff" ]; then
-    if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
-        echo $ffmpeg -hide_banner -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
-    elif [ "$(echo $1 | sed 's/.*\.//g')" == "mkv" ]; then
-        echo "mv -f $(cat $conclist | sed 's/file //g') '$2$1'" >>$proc_scr
-    else
-        echo $ffmpeg -hide_banner -i "$(cat $conclist | sed 's/file //g')" -c copy '"'$2$1'"' >>$proc_scr
+    if [ -z "$cng" ]; then
+        if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
+            echo $ffmpeg -hide_banner -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
+        elif [ "$(echo $1 | sed 's/.*\.//g')" == "mkv" ]; then
+            echo "mv -f $(cat $conclist | sed 's/file //g') '$2$1'" >>$proc_scr
+        else
+            echo $ffmpeg -hide_banner -i "$(cat $conclist | sed 's/file //g')" -c copy '"'$2$1'"' >>$proc_scr
+        fi
     fi
-            fi
     
     ## run script
     chmod +x $proc_scr
     ./$proc_scr
-    if [ ! -z "$moff" ]; then
+    if [ ! -z "$cng" ]; then
         rm -f $proc_scr $tmp1 $conclist *.tmp *.lstmp
+        echo ''
+        echo 'Because "cng" was specified, only first file processed and cuts not glued.'
         exit 0
     fi
     failtest=$(cat $conclist | sed "s/file//g")
@@ -327,7 +336,7 @@ gen_and_run_scr(){
             exit 1; fi
         done
     fi
-    rm -f $proc_scr $tmp1 $conclist t.*.mkv
+    rm -f $proc_scr $tmp1 $conclist cut.*.mkv
 }
 
 lst=$(mktemp XXXXXX.tmp)
@@ -345,7 +354,7 @@ enf=$(wc -l $lst | sed "s/ $lst//g")
 if [ "$enf" -lt 1 ]; then echo '
 Nothing to process
 ' ; rm -f *.tmp *.lstmp; exit 0; fi
-if [ ! -z "$moff" ]; then enf=1; fi
+if [ ! -z "$cng" ]; then enf=1; fi
 for (( j=1; j<=$enf; j+=1)); do
     gen_and_run_scr "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$1" "$2" "$3" "$4" "$5" "$6"
 done
