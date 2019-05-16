@@ -13,6 +13,7 @@ Media Shell Scripts LIBrary. It allow override system ffmpeg and it contain:
 
 Use: $0 func_name [func_params] OR $0 func_name -h 
 OR $0 'ffmpeg=/path_to_ffmpeg' func_name [func_params]
+To skip intermediate optional parameter use empty quotes
 
 Author Andrew S. License GPL
 https://github.com/quarkscript/media_works/
@@ -985,45 +986,109 @@ if [ ! -z "$1" ]; then echo "
 ## 'high motion' zones and increase bitrate of them, 
 ## by cost of slightly decreasing bitrate of other frames.
 ## Zones are bordered by specified persent of selected frame types 
-## with max texture sizes. 
+## with max texture sizes (by default).
 ## Req.: bash, grep, sed, cat, sort, awk, echo, x264 1st-pass log file
 ## Use: place x264_2pass.log to same dir and run - $0 mpeh
+## $0 mpeh '' '2pass.log' '5' '1.5' '[I,P,B,b,any]' 'sfz' '[tex,mv]' '500'
+## 5 - border frames persent of zones frames (15 or less)
+## 1.5 - bitrate multiplicator for zones
+## I or P or B or b or any - frame type for analysis, P by default
+## sfz - use a single frame as a zone, by default '' i.e. yes
+## Condition for analysis: tex - texture, mv - motion vectors.
+## 500 - interval threshold, by default is double keyframe interval.
+## All parameters are optional
 ## There are no any checks, so the probability of failure is high.
 ## Author Andrew S. License GPLv2. 
 ## https://github.com/quarkscript/media_works
 ## https://gitlab.com/quarkscript/media_shell_scripts/
 "; exit 0; fi
+if [ -z "$2" ]; then
+    stats_file="x264_2pass.log"
+elif [ -f "$2" ]; then
+    stats_file=$2
+else
+    echo $2 not a regular file. Exit.
+    exit 1
+fi
+if [ -z "$3" ]; then
+    border_frames_persent=5 ## there is no sense to increase it too high
+elif [ "$3" -ge 16 ]; then
+    echo 'Zone frames percent too high. Exit.'
+    exit 1
+else
+    border_frames_persent=$3
+fi
+if [ -z "$4" ]; then
+    bitrate_multipl=1.5     ## too high value can leads to a noticeable degrade quality out of zones
+else
+    bitrate_multipl=$4
+fi
+if [ -z "$5" ]||[ "$5" == "P" ]; then
+    frame_type="type:P"
+elif [ "$5" == "I" ]; then
+    frame_type="type:I"
+elif [ "$5" == "B" ]; then
+    frame_type="type:B"
+elif [ "$5" == "b" ]; then
+    frame_type="type:b"
+elif [ "$5" == "any" ]; then
+    frame_type="type:"
+else
+    echo Wrong option $5. Exit
+    exit 1
+fi
+if [ -z "$8" ]; then
+    itvl_thrsh=$(($(cat "$stats_file" | head -n 1 | sed 's/.*keyint\=//g' | sed 's/ .*//g')*2))
+elif [[ "$8" =~ ^[0-9]+$ ]]; then
+    itvl_thrsh=$8
+else
+    echo Wrong interval threshold, integer only. Exit.
+    exit 1
+fi
 
-## options
-stats_file="x264_2pass.log"
-border_frames_persent=5 ## there is no sense to increase it too high
-bitrate_multipl=1.5     ## too high value can leads to a noticeable degrade quality out of zones
-frame_type="type:P"
-
-itvl_thrsh=$(($(cat $stats_file| head -n 1 | sed 's/.*keyint\=//g' | sed 's/ .*//g')*2))
 tmp=$(mktemp tmp.XXXXXXXXX)
-echo "$""2 > "$(cat $stats_file | grep "$frame_type" -n | sed 's/.*tex\://g' | sed 's/ .*//g' | sort -nr | head -n $(($(cat $stats_file | grep "$frame_type" --count)*$border_frames_persent/100)) | tail -n 1)" " >>$tmp
-f_list=$(cat $stats_file | grep "$frame_type" | sed 's/.*out\://g' | sed 's/ .*tex\:/ /g' | sed 's/ mv.*//g' | awk -f $tmp | sed 's/ .*//g')
+
+if [ -z "$7" ]||[ "$7" == "tex" ]; then
+    echo "$""2 > "$(cat "$stats_file" | grep "$frame_type" -n | sed 's/.*tex\://g' | sed 's/ .*//g' | sort -nr | head -n $(($(cat "$stats_file" | grep "$frame_type" --count)*$border_frames_persent/100)) | tail -n 1)" " >>$tmp
+    f_list=$(cat "$stats_file" | grep "$frame_type" | sed 's/.*out\://g' | sed 's/ .*tex\:/ /g' | sed 's/ mv.*//g' | awk -f "$tmp" | sed 's/ .*//g')
+elif [ "$7" == "mv" ]; then
+    echo "$""2 > "$(cat "$stats_file" | grep "$frame_type" -n | sed 's/.*mv\://g' | sed 's/ .*//g' | sort -nr | head -n $(($(cat "$stats_file" | grep "$frame_type" --count)*$border_frames_persent/100)) | tail -n 1)" " >>$tmp
+    f_list=$(cat "$stats_file" | grep "$frame_type" | sed 's/.*out\://g' | sed 's/ .*mv\:/ /g' | sed 's/ misc.*//g' | awk -f "$tmp" | sed 's/ .*//g')
+else
+    echo Wrong option $7. Exit.
+    rm -f $tmp
+    exit 1
+fi
 rm -f $tmp
 pr_frame=$(echo $f_list | sed 's/ .*//g')
 bg_zone=$pr_frame
 for cur_frame in $f_list; do
     if [ "$(($cur_frame-$pr_frame))" -gt "$itvl_thrsh" ]; then
-## for not including into zones a single frames uncomment next 'if' and 'fi' lines
-        #if [ "$pr_frame" != "$bg_zone" ]; then
+        if [ -z "$6" ]||[ "$pr_frame" != "$bg_zone" ]; then
             zns+="$bg_zone,$pr_frame,b=$bitrate_multipl/"
             bg_zone=$cur_frame
-        #fi
+        fi
     fi
     pr_frame=$cur_frame
 done
 zns+="XXX"
 zns=$(echo $zns | sed 's/\/XXX//g')
-echo $zns >fzones
-echo '
+if $(echo $zns | grep -q XXX); then
+    echo '
+Something goes wrong. Zones separation fail. 
+Is awk installed? 
+Is video long enough? 
+Is video has a dynamic scenes?
+If all yes try to vary options of mpeh function.
+'
+else
+    echo $zns >fzones
+    echo '
 copy fzones to encoding dir and
 add next option to x264 command: 
---zones $(cat fzones)'
+--zones $(cat fzones)
+'
+fi
 }
 
 
@@ -1235,17 +1300,18 @@ rm -f thread*list.tmp list.tmp
 
 nvenc2mp4(){
 if [ ! -z "$1" ]; then echo "
- Fast transcoding (mkv webm flv ts avi) to compatible format with an old TV
- i.e. *.mp4 {H264 =<30fps =<1920x1080 + aac normalized drc}
- Req: bash, hash, grep, head, tail, wc, mediainfo, ffmpeg with nvenc support,
- nvidia GT 630 or better (except 1030) and installed proprietary Nvidia drivers
- Use: $0 nvenc2mp4                                      OR
- $0 nvenc2mp4 '' '[no,novp]' '50M' 'mkv webm flv ts avi'
- 'no' - do not use dynamic range compression for audio volume
- 'novp' - do not process audio volume
- Author Andrew S. License GPL
- https://github.com/quarkscript/media_works
- https://gitlab.com/quarkscript/media_shell_scripts
+## Fast transcoding (mkv webm flv ts avi) to compatible format with an old TV
+## i.e. *.mp4 {H264 =<30fps =<1920x1080 + aac normalized drc}
+## Req: bash, hash, grep, head, tail, wc, mediainfo, ffmpeg with nvenc support,
+## nvidia GT 630 or better (except 1030) and installed proprietary Nvidia drivers
+## Use: $0 nvenc2mp4                                      OR
+## $0 nvenc2mp4 '' '[no,novp]' '50M' 'mkv webm flv ts avi'
+## 'no' - do not use dynamic range compression for audio volume
+## 'novp' - do not process audio volume
+## 50M - custom video bitrate
+## Author Andrew S. License GPL
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts
 " ;exit 0 ;fi
 ##
 ## set custom video bitrate
@@ -1402,13 +1468,11 @@ wait
 
 
 if $(echo $1 | grep -q --regexp="ffmpeg="); then
-    ffmpeg=$(echo "$1" | sed 's/ffmpeg=//g')
-    #$2 "$3" "$4" "$5" "$6" "$7" "$8" "$9"
-    st_in=2
+    ffmpeg="$(echo "$1" | sed 's/ffmpeg=//g')"
+    st_in=2 #$2 "$3" "$4" "$5" "$6" "$7" "$8" "$9"
 else
     ffmpeg=ffmpeg
-    #$1 "$2" "$3" "$4" "$5" "$6" "$7" "$8"
-    st_in=1
+    st_in=1 #$1 "$2" "$3" "$4" "$5" "$6" "$7" "$8"
 fi
 inpar=$#
 exefunc=''
