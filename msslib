@@ -293,7 +293,7 @@ gen_and_run_scr(){
             mv -f $tmp1 $proc_scr
         else
             ## ignore afreq multipl on speed more than 90, and increase arate proportional before 90
-            if [ "$i" -gt 90 ]; then 
+            if [ "$(echo $i | sed 's/\..*//g')" -gt 90 ]; then 
                 afm=$audfr 
             else
                 audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
