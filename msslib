@@ -459,11 +459,12 @@ fi
 findgain(){            
             audparam=""
             ptmf=$(head -n $3 $2 2>&1 | tail -n 1 )
-            astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g')
+            astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g')
             astream_ch=$(echo $ptmf | sed 's\.*Hz, \\g' | sed 's\(.*\\g' | sed 's/\,.*//g')
             astream_fr=$(echo $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
             astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
             astream_bitrate=$(echo $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
+            
             echo 'File: '$1
             echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Compressor: $astream_cod"
             if [ ! -z "$7" ]; then
@@ -580,8 +581,8 @@ get_ch_gain(){
         
 astrem_calc(){            
     ptmf=$(head -n $3 $2 2>&1 | tail -n 1 )
-    astream_lng=$(echo $ptmf | sed 's/)\:.*//g' | sed 's/.*(//g')
-    astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g')
+    astream_lng=$(echo $ptmf | sed 's/)\:.*//g' | sed 's/.*(//g' | sed 's/)//g')
+    astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g')
     astream_ch=$(echo $ptmf | sed 's\.*Hz, \\g'| sed 's/\,.*//g') # | sed 's\(.*\\g')
     astream_fr=$(echo $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
     astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
@@ -795,8 +796,8 @@ get_ch_gain(){
         
 astrem_calc(){            
     ptmf=$(head -n $3 $2 2>&1 | tail -n 1 )
-    astream_lng=$(echo $ptmf | sed 's/)\:.*//g' | sed 's/.*(//g')
-    astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g')
+    astream_lng=$(echo $ptmf | sed 's/)\:.*//g' | sed 's/.*(//g' | sed 's/)//g')
+    astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g')
     astream_ch=$(echo $ptmf | sed 's\.*Hz, \\g'| sed 's/\,.*//g') # | sed 's\(.*\\g')
     astream_fr=$(echo $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
     astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
