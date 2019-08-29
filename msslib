@@ -1112,15 +1112,16 @@ echo "
 ## Required: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find
 ## Use: $0 nit [audio file extensions] [options] [pref:newfileprefix]
 ## [audio file extensions] are like: mp3, wav, ogg and so on. (mp3 by default)
-## [options] are like: 44100hz, 320kbps, [f-ogg, f-mp3, f-wav, f-flac], -r
+## [options] are like: 44100hz, 320kbps, [f-ogg,f-mp3,f-wav,f-flac,f-webm,f-m4a], -r
 ## -r means recursive (by default is not)
-## f-* means forced output format to one of those [ogg mp3 wav flac]
+## f-* means forced output format to one of those [ogg mp3 wav flac webm/opus m4a]
 ## *hz means output frequency in Hz
 ## *kbps means bitrate in kbps
 ## pref:newfileprefix must be the last parameter on the line, empty is allowed
 ## It are all optional, by default will be used detected parameters
 ## -h or help gives this small help
 ## There are not all checks, so the probability of failure is high.
+## Be aware! multiplexing of covers are supported by ffmpeg for mp3 and flac only
 ## Author Andrew S. License GPLv2 Tested with ffmpeg 4.0.2 
 ## https://github.com/quarkscript/media_works
 ## https://gitlab.com/quarkscript/media_shell_scripts/
@@ -1128,7 +1129,7 @@ echo "
 inargs=$(echo $@ | sed 's/,//g' | sed 's/"//g' | sed "s/'//g")
 echo '  Prepare:'
 rm -f list.tmp thread*list.tmp
-proc_fmts="mp3 ogg wav flac" ## set the supported forced output formats
+proc_fmts="mp3 ogg wav flac webm m4a" ## set the supported forced output formats
 for pfg in $proc_fmts; do
     reserved+="f-$pfg "
 done
@@ -1263,7 +1264,7 @@ normalize_it() {
         else
             outfile="$filepath$5$fnt"
         fi
-        ## amplifyer limit - 0.001dB applied only if it less then generateg gain
+        ## amplifyer limit - 0.01dB applied only if it less then generateg gain
         ampl=$(gainlim $($ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 0.01dB)
         if [ "$cod" == "mp3" ]; then
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz -c:a libmp3lame -b:a "$bitrate"k "$outfile"
@@ -1286,12 +1287,23 @@ normalize_it() {
                 q=10
             fi
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libvorbis -aq $q -f oga "$outfile"
-        elif [ "$cod" == "opus" ]; then
-            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libopus -b:a "$bitrate"k "$outfile"
+        elif [ "$cod" == "webm" ]; then ## libopus as encoder
+            ## ffmpeg support a limited frequencies for libopus encoder
+            if $($ffmpeg -help encoder=libopus -hide_banner | grep 'Supported sample rates' | sed 's/.*\://g' | grep -vq $fr); then
+                fr=48000
+            fi
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libopus -b:a "$bitrate"k -vn "$outfile"
+        elif [ "$cod" == "m4a" ]; then
+            ## for use libfdk_aac instead of aac just uncomment next 4 commented lines
+            #if $($ffmpeg -encoders -hide_banner 2>&1 | grep -q libfdk_aac); then 
+            #    $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libfdk_aac -b:a "$bitrate"k -movflags +faststart -vn "$outfile"
+            #else
+                $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a aac -b:a "$bitrate"k -movflags +faststart -vn "$outfile"
+            #fi
         elif [ "$cod" == "flac" ]; then
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 "$outfile"
         elif [ "$cod" == "wav" ]; then
-            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr "$outfile"
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -vn "$outfile"
         else
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -b:a "$bitrate"k "$outfile"
         fi
