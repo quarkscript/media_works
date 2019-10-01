@@ -10,6 +10,7 @@ Media Shell Scripts LIBrary. It allow override system ffmpeg and it contain:
 > nit - normalize the volume of audio files
 > cuesplit - Splitting one audio into separate flac files corresponding to the CUE
 > tempo - overclock or underclock speed of audio files
+> lca - local cover add to: mp3, flac, mka -audio files
 
 Use: $0 func_name [func_params] OR $0 func_name -h 
 OR $0 'ffmpeg=/path_to_ffmpeg' func_name [func_params]
@@ -1120,11 +1121,10 @@ echo "
 ## pref:newfileprefix must be the last parameter on the line, empty is allowed
 ## It are all optional, by default will be used detected parameters
 ## -h or help gives this small help
+## Multiplexing of covers currently supported for mp3 and flac only. 
+## Otherwise covers will be extracted.
 ## There are not all checks, so the probability of failure is high.
-## Be aware! multiplexing of covers are supported by ffmpeg for mp3 and flac only
-## Author Andrew S. License GPLv2 Tested with ffmpeg 4.0.2 
-## https://github.com/quarkscript/media_works
-## https://gitlab.com/quarkscript/media_shell_scripts/
+## Author Andrew S. License GPLv2 [github,gitlab].com/quarkscript/
 "; exit 0 ; fi
 inargs=$(echo $@ | sed 's/,//g' | sed 's/"//g' | sed "s/'//g")
 echo '  Prepare:'
@@ -1264,10 +1264,24 @@ normalize_it() {
         else
             outfile="$filepath$5$fnt"
         fi
+        covertest=$($ffmpeg -hide_banner -i "$filename" 2>&1 | grep --regexp="Stream")
+        ## extract first cover if container is not supported cover embendding
+        if [ "$cod" != "flac" ]&&[ "$cod" != "mp3" ]; then
+            if $(echo $covertest | grep --regexp="Video" -m 1 | grep -q --regexp=" png"); then
+                $ffmpeg -hide_banner -i "$filename" -c:v copy -an "${outfile%.*}.png"
+            elif $(echo $covertest | grep --regexp="Video" -m 1 | grep -q --regexp=" mjpeg"); then
+                $ffmpeg -hide_banner -i "$filename" -c:v copy -an "${outfile%.*}.jpg"
+            fi
+        elif $(echo $filename | grep -q --regexp="flac" --regexp="mp3"); then 
+        ## for mp3 and flac copy cover(s)
+            copycover="-c:v copy"
+        else
+            copycover=""
+        fi
         ## amplifyer limit - 0.01dB applied only if it less then generateg gain
         ampl=$(gainlim $($ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 0.01dB)
         if [ "$cod" == "mp3" ]; then
-            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -r:a "$fr"Hz -c:a libmp3lame -b:a "$bitrate"k "$outfile"
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar "$fr" -c:a libmp3lame -b:a "$bitrate"k $copycover "$outfile"
         elif [ "$cod" == "vorbis" ] || [ "$cod" == "ogg" ]; then
             if [ "$bitrate" -le 127 ]; then
                 q=3
@@ -1301,7 +1315,7 @@ normalize_it() {
                 $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a aac -b:a "$bitrate"k -movflags +faststart -vn "$outfile"
             #fi
         elif [ "$cod" == "flac" ]; then
-            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 "$outfile"
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 $copycover "$outfile"
         elif [ "$cod" == "wav" ]; then
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -vn "$outfile"
         else
@@ -1311,6 +1325,164 @@ normalize_it() {
 }
 for (( jjj=1; jjj <= $(find -maxdepth 1 -name 'thread*list.tmp' | grep -c thread_); ++jjj )); do
     normalize_it "thread_"$jjj"_list.tmp" "$outformat" "$freq" "$bitrate" "$prefix" &
+done
+wait
+rm -f thread*list.tmp list.tmp
+}
+
+
+##-next-main-function-##
+
+
+lca() {
+if ($(echo $@ | grep -q --regexp="-h" --regexp="help")); then
+echo "
+## lca - Local Cover Add to: mp3, flac, mka -audio files
+## Required: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find
+## Use: $0 lca [audio file extensions] [f-mka] [-r] [pref:newfileprefix]
+## [audio file extensions] like: mp3, wav, ogg and so on. (mp3 by default)
+## -r means recursive (by default is not); f-mka - force to mux all files in mka
+## pref:newfileprefix must be the last parameter on the line. This script search local
+## jpg and png images named same as audio files or like 'folder' 'cover' and so on.
+## -h or help gives this small help
+## Multiplexing of covers currently supported for mp3 and flac only. 
+## Otherwise, covers will be muxed to mka files.
+## There are not all checks, so the probability of failure is high.
+## Author Andrew S. License GPLv2 [github,gitlab].com/quarkscript/
+"; exit 0 ; fi
+
+inargs=$(echo $@ | sed 's/,//g' | sed 's/"//g' | sed "s/'//g")
+echo '  Prepare:'
+rm -f list.tmp thread*list.tmp
+reserved+=" -r f-mka "
+extns=$inargs
+for ii in $reserved; do
+    extns=$(echo $extns | sed "s/$ii//g")
+done
+extns=$(echo $extns | sed "s/pref\:.*//g")
+if [ -z "$(echo $extns | sed 's/ //g')" ]; then
+    extns='mp3'
+    echo "By default mp3 files will be processed"
+else
+    echo "Will be processed: $(echo $extns | sed 's/  / /g' | sed 's/ /, /g') files"
+fi
+if $(echo $inargs | grep -q --regexp="f-mka"); then
+    echo "force muxing to *.mka"
+    outformat=mka
+else
+    outformat=''
+fi
+threads=$(($(grep 'model name' /proc/cpuinfo --count)+1))
+echo "Up to $threads threads can be used simultaneously"
+if $(echo $inargs | grep -q --regexp='-r'); then
+    echo "-r is specified, all files from all subdirs will be processed"
+    mdp=""
+else 
+    echo "-r is not specified, files from subfolders will be not processed"
+    mdp="-maxdepth 1"
+fi
+prefix=$(echo $inargs | sed "s/.*pref\://g")
+if [ "$(echo $inargs | grep -c --regexp='pref:')" -gt 0 ] && [ ! -z "$prefix" ]; then
+## empty prefix isn't allowed
+    echo "Files prefix specified to '$prefix'"
+else
+    prefix=artd_
+    echo "Default files prefix is '$prefix'"
+fi
+for iii in $extns; do
+        find  $mdp -not -name "$prefix*" -name "*.$iii" | sed 's|\.\/||g'>>list.tmp
+done
+filesnum=$(wc -l list.tmp | sed 's/ list.tmp//g')
+if [ "$filesnum" -eq "0" ]; then
+    echo "Files with extensions: $(echo $extns | sed 's/ /, /g') not found. Exit"
+    exit 0
+else
+    count=1
+    ## check minimal limit of files for multithreads processing
+    if [ "$filesnum" -gt "$(($threads*0+2))" ]; then
+        count_inc=1
+    else
+        count_inc=0
+    fi
+    for (( jj=1; jj <= $filesnum; ++jj )); do
+        if [ "$count" -eq "$(($threads+1))" ]; then
+            count=1
+        fi
+        head -n $jj list.tmp 2>&1 | tail -n 1 >>"thread_"$count"_list.tmp"
+        count=$(($count+$count_inc))
+    done
+    rm -f tmp.tmp
+fi
+if [ "$filesnum" -eq 1 ]; then
+    echo "only one file will be muxed with cover"
+else
+    echo "$filesnum files will be muxed with cover, if covers available locally"
+fi
+echo "  Processing:"
+
+art_it() {
+    flsnum=$(wc -l $1 | sed "s/ $1//g")
+    for (( cycle_list=1; cycle_list <= $flsnum; ++cycle_list )); do
+        filename=$(head -n $cycle_list $1 2>&1 | tail -n 1)
+        if [ ! -z "$2" ]; then
+            cod=$2
+        elif $(echo $filename | sed 's/.*\.//g' | grep -q --regexp='mp3' --regexp='flac'); then
+            cod="$(echo $filename | sed 's/.*\.//g' | sed 's/ //g')"
+        else
+            cod='mka'
+        fi
+        if $(echo $filename | grep -q --regexp="/"); then
+            fnt=$(echo $filename | sed 's/.*\///g')
+            filepath=$(echo $filename | sed "s/$fnt//g")
+        else
+            filepath=""
+            fnt="$filename"
+        fi
+        outfile="$filepath$3${fnt%.*}.$cod"
+
+## search local cover art by mask
+coverpath=$(find -name "*.*" | sed 's@\.\/@@g' | grep -x --regexp="${filename%.*}."[Pp][Nn][Gg] \
+--regexp="${filename%.*}."[Jj][Pp][Gg] \
+--regexp="$filepath"[Ff][Oo][Ll][Dd][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Ff][Oo][Ll][Dd][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Cc][Oo][Vv][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Cc][Oo][Vv][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Ll][Bb][Uu][Mm].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Ll][Bb][Uu][Mm].[Jj][Pp][Gg] \
+--regexp="$filepath"[Bb][Aa][Cc][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Bb][Aa][Cc][Kk].[Jj][Pp][Gg] \
+--regexp="$filepath"[Ff][Rr][Oo][Nn][Tt].[Pp][Nn][Gg] \
+--regexp="$filepath"[Ff][Rr][Oo][Nn][Tt].[Jj][Pp][Gg] \
+--regexp="$filepath"[Dd][Ii][Ss][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Dd][Ii][Ss][Kk].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Oo][Ll][Dd][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Oo][Ll][Dd][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Cc][Oo][Vv][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Cc][Oo][Vv][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Aa][Ll][Bb][Uu][Mm].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Aa][Ll][Bb][Uu][Mm].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Bb][Aa][Cc][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Bb][Aa][Cc][Kk].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Rr][Oo][Nn][Tt].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Rr][Oo][Nn][Tt].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Dd][Ii][Ss][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Dd][Ii][Ss][Kk].[Jj][Pp][Gg] --m 1) 
+
+        if [ "$coverpath" != "" ]; then 
+            ## muxing
+            if [ "$cod" != "mka" ]; then
+                $ffmpeg -hide_banner -i "$filename" -i "$coverpath" -map 0:a -c:a copy -map 1 -c copy "$outfile"
+            else
+                $ffmpeg -hide_banner -i "$filename" -map 0:a -c:a copy -attach "$coverpath" -metadata:s:1 mimetype=image/"$(echo $coverpath | sed 's/.*\.//g' | sed 's/ //g' | sed 's/\(.*\)/\L\1/')" "$outfile"
+            fi
+        else 
+            echo "Cover not found. File '$filename' ignored"
+        fi
+    done
+
+}
+for (( jjj=1; jjj <= $(find -maxdepth 1 -name 'thread*list.tmp' | grep -c thread_); ++jjj )); do
+    art_it "thread_"$jjj"_list.tmp" "$outformat" "$prefix" &
 done
 wait
 rm -f thread*list.tmp list.tmp
