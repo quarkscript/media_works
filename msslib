@@ -27,18 +27,29 @@ fi
 
 
 gainlim(){
-    limvar=$(echo $1 | sed 's/dB//g')
-    limval=$(echo $2 | sed 's/dB//g')
-    fracvar=$(echo $limvar | sed 's/.*\.//g')
-    fracval=$(echo $limval | sed 's/.*\.//g')
-    if [ "${#fracvar}" -gt "${#fracval}" ]; then fracpow=${#fracvar} ; else fracpow=${#fracval} ; fi
-    tmprez=$((10#$(echo $limvar | sed 's/\..*//g')*(10**$fracpow)+10#$fracvar*(10**($fracpow-${#fracvar}))-(10#$(echo $limval | sed 's/\..*//g')*(10**$fracpow)+10#$fracval*(10**($fracpow-${#fracval})))))
-    if $(echo $tmprez | grep -q --regexp='-'); then 
-        echo 0.0 
-    else 
-        rezfract=$(echo $((10#$tmprez-(10#$tmprez/(10**$fracpow))*(10**$fracpow))) | sed 's/-//g')
-        echo $tmp$(echo $(($tmprez/(10**$fracpow))) | sed 's/-//g').$(echo $((10**($fracpow-${#rezfract}))) | sed 's/1//g')"$rezfract"
-    fi
+## limit the volume amplifier and sign inverser
+## Author Andrew S. License GPL [github,gitlab].com/quarkscript/
+
+## rm dBs (and signs)
+limvar=$(echo $1 | sed 's/dB//g' | sed 's/-//g')
+limval=$(echo $2 | sed 's/dB//g' | sed 's/-//g') # limval sign ignored
+## extract fractions
+fracvar=$(echo $limvar | sed 's/.*\.//g')
+fracval=$(echo $limval | sed 's/.*\.//g')
+## fix if nofraction
+if $(echo $limvar | grep -vq "\."); then fracvar="0"; fi
+if $(echo $limval | grep -vq "\."); then fracval="0"; fi
+## extract and invert limvar sign
+if $(echo $1 | grep -q --regexp="-"); then signinv="" ; else signinv="-" ; fi
+## compare fractions
+if [ "${#fracvar}" -gt "${#fracval}" ]; then fracpow=${#fracvar} ; else fracpow=${#fracval} ; fi
+## make calculations
+tmprez=$((10#$(echo $limvar | sed 's/\..*//g')*(10**$fracpow)+10#$fracvar*(10**($fracpow-${#fracvar}))-("$signinv"1)*(10#$(echo $limval | sed 's/\..*//g')*(10**$fracpow)+10#$fracval*(10**($fracpow-${#fracval})))))
+intrval=$((10#$tmprez-(10#$tmprez/(10**$fracpow))*(10**$fracpow))) ## intermediate value
+rezfract=$(echo $intrval | sed 's/-//g')
+if $(echo $intrval | grep -q --regexp="-"); then sign="-"; else sign=""; fi
+## output rezult
+echo $(echo $(("$signinv"1*"$sign"1)) | sed 's/1//g')$(echo $(($tmprez/(10**$fracpow)))).$(echo $((10**($fracpow-${#rezfract}))) | sed 's/1//g')"$rezfract"
 }
 
 
@@ -46,19 +57,20 @@ gainlim(){
 
 
 ming1(){
-    ## take min amplifyer
-    all=$(echo $(cat $1 | grep g1 | grep -v FC | sed "s/.*=//g" | sed 's/dB//g'))
-    min=$(echo $all | sed 's/ .*//g')
-    for k in $all; do
-        min1=$(echo $min | sed 's/\..*//g')
-        min2=$(echo $min | sed 's/.*\.//g')
-        k1=$(echo $k | sed 's/\..*//g')
-        k2=$(echo $k | sed 's/.*\.//g')
-        if [ "$k1" -eq "$min1" ]&&[ "$k2" -lt "$min2" ]||[ "$k1" -lt "$min1" ]; then
-            min=$k
-        fi
-    done
-    echo $min    
+## take the min from all channels volume amplifiers
+## Author Andrew S. License GPL [github,gitlab].com/quarkscript/
+all=$(echo $(cat $1 | grep g1 | grep -v FC | sed "s/.*=//g" | sed 's/dB//g'))
+min=$(echo $all | sed 's/ .*//g')
+for k in $all; do
+    min1=$(echo $min | sed 's/\..*//g')
+    min2=$(echo $min | sed 's/.*\.//g')
+    k1=$(echo $k | sed 's/\..*//g')
+    k2=$(echo $k | sed 's/.*\.//g')
+    if [ "$k1" -eq "$min1" ]&&[ "$k2" -lt "$min2" ]||[ "$k1" -lt "$min1" ]; then
+        min=$k
+    fi
+done
+echo $min    
 }
 
 
@@ -66,48 +78,55 @@ ming1(){
 
 
 showprogress(){
-    sleep 10
-    ## this function is way too expensive, don't decrease timestep less than 5 second
-    if $(ls | grep -q stream_tmp_data. ); then
-        runtime=10
-        timestep=10
-        totaltime=$(("((10#"$(cat $1 | grep Duration -m 1 | sed 's/,.*//g' | sed 's/.*\: //g' | sed 's/\:/)\*60+10#/g' | sed 's/\..*//g')))
-        while $(ls | grep -q stream_tmp_data. ); do
-            runtime=$(($runtime+$timestep))
-            progress=0
-            wholerun=0
-            printline="|"
-            for ffl in stream_tmp_data.* ; do
-                tmp1=$(cat $ffl 2>/dev/null | grep 'time=' | tail -n 1 | sed 's/.*time=//g' | sed 's/\..*//g' | sed 's/\:/)\*60+10#/g' | sed 's/\..*//g')
-                tmp2="((10#"$tmp1
-                if [ -n "$tmp1" ]; then
-                    wholerun=$(($totaltime+$wholerun))
-                    progress=$(($tmp2+$progress))
-                fi
-            done
-            if [ "$wholerun" -gt "0" ]; then
-                wprog=$(($progress*100/$wholerun))
-            else
-                wprog=0
+## progressbar
+## Author Andrew S. License GPL [github,gitlab].com/quarkscript/
+sleep 10 ## start delay, to prevent autoend
+## this function is way too expensive, don't decrease timestep less than 5 second
+if $(ls | grep -q stream_tmp_data. ); then
+    runtime=10
+    timestep=10
+    totaltime=$(("((10#"$(cat $1 | grep Duration -m 1 | sed 's/,.*//g' | sed 's/.*\: //g' | sed 's/\:/)\*60+10#/g' | sed 's/\..*//g')))
+    while $(ls | grep -q stream_tmp_data. ); do
+        runtime=$(($runtime+$timestep))
+        progress=0
+        wholerun=0
+        printline="|"
+        for ffl in stream_tmp_data.* ; do
+            tmp1=$(cat $ffl 2>/dev/null | grep 'time=' | tail -n 1 | sed 's/.*time=//g' | sed 's/\..*//g' | sed 's/\:/)\*60+10#/g' | sed 's/\..*//g')
+            tmp2="((10#"$tmp1
+            if [ -n "$tmp1" ]; then
+                wholerun=$(($totaltime+$wholerun))
+                progress=$(($tmp2+$progress))
             fi
-            for ((plt=1; plt<=$(($wprog/2)); plt++)); do
-                printline+="#"
-            done
-            for ((plt=1; plt<=$((50-$wprog/2)); plt++)); do
-                printline+="."
-            done
-            if [ "$wprog" -gt "0" ]; then
-                eta=$(($runtime*(100-$wprog)/($wprog*60)))
-            else
-                eta=""
-            fi
-            printline+="| ETA ~ $eta m "
-            echo -en "\r$printline"
-            sleep $timestep
         done
-        echo -en "\rdone. "
-        echo ""
-    fi
+        if [ "$wholerun" -gt "0" ]; then
+            wprog=$(($progress*100/$wholerun))
+        else
+            wprog=0
+        fi
+        for ((plt=1; plt<=$(($wprog/2)); plt++)); do
+            printline+="#"
+        done
+        for ((plt=1; plt<=$((50-$wprog/2)); plt++)); do
+            printline+="."
+        done
+        if [ "$wprog" -gt "0" ]; then
+            eta=$(($runtime*(100-$wprog)/($wprog*60)))
+        else
+            eta=""
+        fi
+        printline+="| ETA ~ $eta m "
+        echo -en "\r$printline"
+        sleep $timestep
+    done
+    printline="|"
+    for ((plt=1; plt<=$((100/2)); plt++)); do
+        printline+="#"
+    done
+    printline+="| DONE           "
+    echo -en "\r$printline"
+    echo ""
+fi
 }
 
 
@@ -576,7 +595,8 @@ echo "
 
 get_ch_gain(){
     ## get channel gain
-    ch_g=$($ffmpeg -i "$1" -hide_banner -filter_complex "$2" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+    #ch_g=$($ffmpeg -i "$1" -hide_banner -filter_complex "$2" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+    ch_g=$($ffmpeg -i "$1" -hide_banner -filter_complex "$2" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/ //g')
     echo " $3=$ch_g""dB ">>$4
 }
         
@@ -790,7 +810,8 @@ get_ch_gain(){
     ## get channel gain
     wf=$(mktemp stream_tmp_data.XXXXXXXXXXX)
     $ffmpeg -i "$1" -hide_banner -filter_complex "$2" -f null /dev/null 2>$wf
-    ch_g=$(cat $wf | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+    #ch_g=$(cat $wf | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+    ch_g=$(cat $wf | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/ //g')
     echo " $3=$ch_g""dB ">>$4
     rm -f $wf
 }
@@ -1279,7 +1300,8 @@ normalize_it() {
             copycover=""
         fi
         ## amplifyer limit - 0.01dB applied only if it less then generateg gain
-        ampl=$(gainlim $($ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 0.01dB)
+        #ampl=$(gainlim $($ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 0.01dB)
+        ampl=$(gainlim $($ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/ //g') 0.01dB)
         if [ "$cod" == "mp3" ]; then
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar "$fr" -c:a libmp3lame -b:a "$bitrate"k $copycover "$outfile"
         elif [ "$cod" == "vorbis" ] || [ "$cod" == "ogg" ]; then
@@ -1337,7 +1359,7 @@ rm -f thread*list.tmp list.tmp
 lca() {
 if ($(echo $@ | grep -q --regexp="-h" --regexp="help")); then
 echo "
-## lca - Local Cover Add to: mp3, flac, mka -audio files
+## lca - Local Cover Add to: mp3, flac, mka - audio files
 ## Required: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find
 ## Use: $0 lca [audio file extensions] [f-mka] [-r] [pref:newfileprefix]
 ## [audio file extensions] like: mp3, wav, ogg and so on. (mp3 by default)
