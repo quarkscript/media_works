@@ -22,7 +22,7 @@
 
 - [**tempo**](tempo) - shell script that allow to "overclock" or "underclock" speed of audio files
 
-[**msslib**](msslib) - all previous scripts in single file
+[**msslib**](msslib) - all previous scripts in single file (+ new function - 'lca' - add a local cover art to mp3, flac or mka)
 
 **More simpler scripts:**
 
