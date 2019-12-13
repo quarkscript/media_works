@@ -1,0 +1,11 @@
+#!/bin/bash
+#./msslib 'csvc' 'speeds' 'time_stamps' 'filename' 'vid_enc_set' 'vid_filt' 'aud_enc_set' 'moff'
+
+speeds="$(cat timestamps | grep speeds | sed 's/speeds //g')"
+time_stamps="$(cat timestamps | grep speed_stamps | sed 's/speed_stamps //g')"
+filename=''
+vid_enc_set='-c:v h264_nvenc -coder cabac -preset hq -rc vbr_hq -b:v 50M '
+vid_filt=',crop=1440:832:0:48,scale=h=720:w=1280:flags=lanczos,setsar=1 '
+aud_enc_set=''
+
+./msslib ffmpeg=o_ffmpeg csvc "$speeds" "$time_stamps" "$filename" "$vid_enc_set" "$vid_filt" "$aud_enc_set" 'moff'

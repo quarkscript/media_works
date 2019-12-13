@@ -1,0 +1,10 @@
+#!/bin/bash
+## remove all source files from subfolders that are not drc-ed_
+
+tmp=$(mktemp XXXXXXX.tmp)
+find -name *.mp4 | sed 's@\.\/@@g' | grep -v "drc-ed_" >>$tmp
+find -name *.mkv | sed 's@\.\/@@g' | grep -v "drc-ed_" >>$tmp
+for ((i=1;i<=$(wc -l $tmp | sed "s@ $tmp@@g");i++)); do
+    rm -f "$(head -n $i $tmp 2>&1 | tail -n 1)"
+done
+rm -f $tmp

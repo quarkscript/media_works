@@ -1,0 +1,14 @@
+#!/bin/bash 
+time x264 "tst.mkv" --opencl --b-adapt 2 --ref 12 --bframes 15 --aq-mode 2 --aq-strength 0.8 --me umh --no-psy --subme 9 --trellis 1 --bitrate 4400 --pass 1 --no-fast-pskip -o tst.mp4 --slow-firstpass  #--frames 5000
+
+time ./mpeh
+
+time x264 "tst.mkv" --opencl --b-adapt 2 --ref 12 --bframes 15 --aq-mode 2 --aq-strength 0.8 --me umh --no-psy --subme 9 --trellis 1 --bitrate 4400 --pass 2 --no-fast-pskip -o tst.mp4 --zones $(cat fzones) #--frames 5000
+
+exit 0
+
+time x264 "tst.mkv" --vf crop:0,22,6,22 --opencl --b-adapt 2 --ref 4 --bframes 9 --aq-mode 2 --aq-strength 0.7 --me umh --no-psy --subme 9 --trellis 1 --nr 1000 --bitrate 4300 --pass 1 --no-fast-pskip -o tst.mp4 # --frames 5000
+
+time ./mpeh
+
+time x264 "tst.mkv" --vf crop:0,22,6,22 --opencl --b-adapt 2 --ref 4 --bframes 9 --aq-mode 2 --aq-strength 0.7 --me umh --no-psy --subme 9 --trellis 1 --nr 1000 --bitrate 4300 --pass 2 --no-fast-pskip -o tst.mp4 --zones $(cat fzones) # --frames 5000

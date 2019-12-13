@@ -1,0 +1,12 @@
+#!/bin/bash
+## rename all drc-ed_ files on all subfolder to original names without drc-ed_
+
+tmp=$(mktemp XXXXXXX.tmp)
+find -name *.mp4 | sed 's@\.\/@@g' | grep "drc-ed_" >>$tmp
+find -name *.mkv | sed 's@\.\/@@g' | grep "drc-ed_" >>$tmp
+for ((i=1;i<=$(wc -l $tmp | sed "s@ $tmp@@g");i++)); do
+    fn="$(head -n $i $tmp 2>&1 | tail -n 1)"
+    fnn="$(echo $fn | sed 's/drc-ed_//g')"
+    mv -f "$fn" "$fnn"
+done
+rm -f $tmp
