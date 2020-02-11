@@ -1,0 +1,1370 @@
+#!/bin/bash
+if [ -z $1 ] || [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "help" ]; then
+    echo "
+Media Shell Scripts LIBrary. It allow override system ffmpeg and it contain:
+> nvenc2mp4 -nvidia hardware accelerated video transcoding
+> mpeh - experimental helper script for x264 multi-pass encoding
+> csvc - changing the speed for video file or for cuts in video file during reencoding
+> fdrch+ - Force Dynamic Range Compression to center cHannel + fdrc-mode
+> nit - normalize the volume of audio files
+> cuesplit - Splitting one audio into separate flac files corresponding to the CUE
+> tempo - overclock or underclock speed of audio files
+> lca - local cover add to: mp3, flac, mka -audio files
+
+Use: $0 func_name [func_params] OR $0 func_name -h 
+OR $0 'ffmpeg=/path_to_ffmpeg' func_name [func_params]
+To skip intermediate optional parameter use empty quotes
+
+Author Andrew S. License GPL [github,gitlab].com/quarkscript/
+"; exit 0
+fi
+
+############################
+## shared functions:
+
+
+gainlim(){
+## limit the volume amplifier and sign inverser
+## Author Andrew S. License GPL [github,gitlab].com/quarkscript/
+
+## rm dBs (and signs)
+limvar=$(echo $1 | sed 's/dB//g' | sed 's/-//g')
+limval=$(echo $2 | sed 's/dB//g' | sed 's/-//g') # limval sign ignored
+## extract fractions
+fracvar=$(echo $limvar | sed 's/.*\.//g')
+fracval=$(echo $limval | sed 's/.*\.//g')
+## fix if nofraction
+if $(echo $limvar | grep -vq "\."); then fracvar="0"; fi
+if $(echo $limval | grep -vq "\."); then fracval="0"; fi
+## extract and invert limvar sign
+if $(echo $1 | grep -q --regexp="-"); then signinv="" ; else signinv="-" ; fi
+## compare fractions
+if [ "${#fracvar}" -gt "${#fracval}" ]; then fracpow=${#fracvar} ; else fracpow=${#fracval} ; fi
+## make calculations
+tmprez=$((10#$(echo $limvar | sed 's/\..*//g')*(10**$fracpow)+10#$fracvar*(10**($fracpow-${#fracvar}))-("$signinv"1)*(10#$(echo $limval | sed 's/\..*//g')*(10**$fracpow)+10#$fracval*(10**($fracpow-${#fracval})))))
+intrval=$((10#$tmprez-(10#$tmprez/(10**$fracpow))*(10**$fracpow))) ## intermediate value
+rezfract=$(echo $intrval | sed 's/-//g')
+if $(echo $intrval | grep -q --regexp="-"); then sign="-"; else sign=""; fi
+## output rezult
+echo $(echo $(("$signinv"1*"$sign"1)) | sed 's/1//g')$(echo $(($tmprez/(10**$fracpow)))).$(echo $((10**($fracpow-${#rezfract}))) | sed 's/1//g')"$rezfract"
+}
+
+
+## end of shared functions
+############################
+## main functions:
+
+
+csvc(){
+if [ -z "$1" ]||[ "$1" == "help" ]||[ "$1" == "--help" ]||[ "$1" == "-h" ]; then
+echo " 
+## Change the Speed of Video Cuts during re-encoding. (mkv,mp4)
+## Req. bash-like shell, grep, sed, head, tail, wc, find, ffmpeg, mediainfo
+## Multistreams are not supported, i.e. single video + single audio
+## Use: $0 'csvc' 'speeds' 'timestamps' 'filename' 'vid_enc_set' 'vid_filt' 'aud_enc_set' 'cng'
+## All params except 'speeds' are optional. 'vid_filt' must start from ',' By default:
+## vid_enc_set=$(cat $0 | grep 'c:v' | grep video_encoder_string | grep -v grep | sed 's/.*g=//g') 
+## vid_filt=$(cat $0 | grep video_filters_string= | grep -v --regexp='grep' --regexp='$7' | sed 's/.*g=//g') 
+## aud_enc_set=$(cat $0 | grep 'c:a' | grep audio_en | grep -v grep | sed 's/.*g=//g')     
+## speeds like '1.5 2.7 0.2' req. timestamps like '00:00:10.234 00:00:20.927'
+## filename may be for example '*.avi', quotes required
+## cng - process only first file , cuts do not glue (if you need to manipulate with cuts)
+## Very high speed or speed more than for example 200 may lead to fail.
+## There are not all checks, so the probability of failure is high
+## Author Andrew S. License GPL  Tested with ffmpeg 4.1 and tst.mkv
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
+"; exit 1; fi
+
+num_1=0; for i1 in $1; do num_1=$(($num_1+1)); done
+num_2=0; for i2 in $2; do num_2=$(($num_2+1)); done
+
+if [ "$num_1" -gt 1 ]&&[ -z "$2" ]; then
+echo "
+Error! More than a single 'Speed' require a 'Timestamps' params"
+$0; exit 1; fi
+
+if [ "$num_1" -ge 1 ]&&[ "$num_1" != "$(($num_2+1))" ]; then
+echo "
+Error! $num_1 not equal 1+$num_2 i.e. 'Speeds count' must be equal to 1+'Timestamps count'"
+$0; exit 1; fi
+if [ ! -z "$7" ]; then cng=1; fi
+
+afilter_gen(){
+    integer=$(echo $1 | sed 's/\..*//')
+    if $(echo $1 | grep [.] -q); then
+        fraction=$(echo $1 | sed 's/.*\.//')
+    else
+        fraction=0
+    fi
+    fr_s_mi_one=$((${#fraction}-1))
+    if [ "$integer" -ge 1 ]; then
+        cn=0
+        while [ "$((10**$cn))" -le "$integer" ]; do
+            integer=$(($integer*10/2))
+            fraction=$(($fraction*10/2))
+            cn=$(($cn+1))
+        done
+        for ((tt=1;tt<$cn;tt+=1)); do af+="atempo=2.0,"; done
+        tv1=$(($integer*2*(10**$fr_s_mi_one)+$fraction/5))
+        tv2=$(($tv1/(10**($cn+$fr_s_mi_one))))
+        echo "$af"atempo=$tv2.$(echo " $tv1" | sed 's/ 1//g')
+    else
+        echo atempo=$1
+    fi
+}
+
+gen_and_run_scr(){
+    fintmp=$(mktemp XXXXXXXXX.tmp)
+    
+    ## get info
+    mediainfo "$1">$fintmp
+    vidw=$(cat $fintmp | grep Width | sed -e 's/\://g' | sed -e 's/Width//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+    vidh=$(cat $fintmp | grep Height | sed -e 's/\://g' | sed -e 's/Height//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+    audfr=$(cat $fintmp | grep "Sampling rate" | sed 's/ kHz.*//g' | sed 's/.* //g' | sed 's/\.//g')"00"
+    ##
+    #$ffmpeg -i "$1" -hide_banner 2>$fintmp
+    #vidw=$(cat $fintmp | grep [0-9]x[1-9] | sed 's/x[1-9].*//g' | sed 's/.* //g')
+    #vidh=$(cat $fintmp | grep [0-9]x[1-9] | sed 's/.*[0-9]x//g' | sed 's/ .*//g')
+    #audfr=$(cat $fintmp | grep Hz | sed 's/ Hz.*//g' | sed 's/.* //g')
+    ##
+    #echo $vidw $vidh $audfr
+    #exit 0
+    
+    ## chek if audio present
+    if $(echo $audfr | grep -q [1-9][0-9][0-9][0-9][0-9][0-9]) || $(echo $audfr | grep -q [1-9][0-9][0-9][0-9][0-9]) || $(echo $audfr | grep -q [1-9][0-9][0-9][0-9]); then
+        apresent=1
+    else 
+        apresent=0
+    fi
+
+    proc_scr=$(mktemp XXXXXX.scr)
+
+    ## default encoders and filters settings
+    if [ -z "$6" ]; then
+        video_encoder_string='-c:v libx264 -crf 20 '
+    else
+        video_encoder_string="$6"
+    fi
+    if [ -z "$7" ]; then
+        video_filters_string='' 
+    else
+        video_filters_string="$7"
+    fi
+    if [ -z "$8" ]; then
+        audio_encoder_string='-b:a 320k -c:a aac'
+    else
+        audio_encoder_string="$8"
+    fi
+
+    ## gen processing script
+    count=1
+    if [ ! -z "$4" ]; then
+        startpoint=00:00:00.000
+        for i in $4; do
+            if [ "$apresent" -eq 1 ]; then
+                echo "
+                runfunc$count(){
+                $ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
+                $ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
+                $ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+                }
+                runfunc$count &">>$proc_scr
+                muxcnf="-i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0"
+            else
+                muxcnf="-i tmp.$count.mkv -c copy -map 0:0 "
+            fi
+            echo "
+            $ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
+            wait
+            $ffmpeg -hide_banner $muxcnf cut.$count.mkv
+            rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
+            count=$(($count+1))
+            startpoint=$i
+        done  
+        if [ "$apresent" -eq 1 ]; then
+            echo "
+            runfunc$count(){
+            $ffmpeg -hide_banner -ss $startpoint -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
+            $ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
+            $ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+            }
+            runfunc$count &">>$proc_scr
+            muxcnf="-i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0"
+        else
+            muxcnf="-i tmp.$count.mkv -c copy -map 0:0 "
+        fi
+        echo "
+        $ffmpeg -hide_banner -ss $startpoint -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
+        wait
+        $ffmpeg -hide_banner $muxcnf cut.$count.mkv
+        rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
+    else
+        if [ "$apresent" -eq 1 ]; then
+            echo "
+            runfunc(){
+            $ffmpeg -hide_banner -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
+            $ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
+            $ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+            }
+            runfunc &">>$proc_scr
+            muxcnf="-i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0"
+        else
+            muxcnf="-i tmp.$count.mkv -c copy -map 0:0 "
+        fi
+        echo "
+        $ffmpeg -hide_banner -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
+        wait
+        $ffmpeg -hide_banner $muxcnf cut.$count.mkv
+        rm -f tmp.$count.mkv tmp.$count.mka tmp.$count.wav tmp2.$count.wav ">>$proc_scr
+    fi
+    count=1
+    tmp1=$(mktemp XXXXXXXXXXXXXXX.tmp)
+    conclist=$(mktemp XXXXXXXXX.lst.tmp)
+    for i in $3; do
+        if $(echo $i | grep -q '0.'); then flsmo=',minterpolate=mi_mode=blend'; else flsmo=''; fi ## fake slow-mo
+        cat $proc_scr | sed "s/speed$count@/$i$flsmo/g" >$tmp1
+        mv -f $tmp1 $proc_scr
+        fract=$(echo $i | sed 's/.*\.//g')
+        if $(echo $i | sed 's/\..*//g' | grep -vq [1-9])&&[ "$fract" -lt "$((8*(10**(${#fract}-1))))" ]; then ## atempo low limit
+            cat $proc_scr | sed "s/-ar arate$count@//g">$tmp1
+            mv -f $tmp1 $proc_scr
+            cat $proc_scr | sed "s/afilter$count@/asetrate=$(($audfr*fract/(10**(${#fract}))))/g">$tmp1
+            mv -f $tmp1 $proc_scr
+        else
+            ## ignore afreq multipl on speed more than 90, and increase arate proportional before 90
+            if [ "$(echo $i | sed 's/\..*//g')" -gt 90 ]; then 
+                afm=$audfr 
+            else
+                audio_freq_mult=$(($(echo $i | sed 's/\..*//g')+1))
+                afm=$(($audfr*$audio_freq_mult))
+                if [ "$afm" -gt 300000 ]; then afm=300000 ; fi ## limit afreq multipl, on higher speed 
+            fi
+            cat $proc_scr | sed "s/arate$count@/$afm/g">$tmp1
+            mv -f $tmp1 $proc_scr
+            cat $proc_scr | sed "s/afilter$count@/$(afilter_gen $i)/g">$tmp1
+            mv -f $tmp1 $proc_scr
+        fi
+        echo file "cut.$count.mkv">>$conclist
+        count=$(($count+1))
+    done
+    if [ -z "$cng" ]; then
+        if [ "$(wc -l $conclist | sed 's/ .*//g')" -gt 1 ]; then
+            echo $ffmpeg -hide_banner -f concat -safe 0 -i $conclist -c copy '"'$2$1'"' >>$proc_scr
+        elif [ "$(echo $1 | sed 's/.*\.//g')" == "mkv" ]; then
+            echo "mv -f $(cat $conclist | sed 's/file //g') '$2$1'" >>$proc_scr
+        else
+            echo $ffmpeg -hide_banner -i "$(cat $conclist | sed 's/file //g')" -c copy '"'$2$1'"' >>$proc_scr
+        fi
+    fi
+    
+    ## run script
+    chmod +x $proc_scr
+    ./$proc_scr
+    if [ ! -z "$cng" ]; then
+        rm -f $proc_scr $tmp1 $conclist *.tmp *.lstmp
+        echo ''
+        echo 'Because "cng" was specified, only first file processed and cuts not glued.'
+        exit 0
+    fi
+    failtest=$(cat $conclist | sed "s/file//g")
+    if [ "$(echo $failtest | grep -c mkv)" -gt 1 ]; then
+        for ft in $failtest; do 
+            if [ ! -f "$ft" ]; then 
+            echo '
+            Some parts are not processed... Encoding stops. Some intermediate files will not be deleted.'
+            exit 1; fi
+        done
+    fi
+    rm -f $proc_scr $tmp1 $conclist cut.*.mkv
+}
+
+lst=$(mktemp XXXXXX.tmp)
+fmts="mp4 mkv"
+prefix="prcd_"
+if [ -z "$3" ]; then
+    for i in $fmts; do
+        find  -maxdepth 1 -not -name "$prefix*" -name "*.$i" | sed 's|\.\/||g'>>$lst
+    done
+else
+    find  -maxdepth 1 -name "$3" | sed 's|\.\/||g'>>$lst
+fi
+currfile=$(mktemp XXXXXXXX.lstmp)
+enf=$(wc -l $lst | sed "s/ $lst//g")
+if [ "$enf" -lt 1 ]; then echo '
+Nothing to process
+' ; rm -f *.tmp *.lstmp; exit 0; fi
+if [ ! -z "$cng" ]; then enf=1; fi
+for (( j=1; j<=$enf; j+=1)); do
+    gen_and_run_scr "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$1" "$2" "$3" "$4" "$5" "$6"
+done
+rm -f *.tmp *.lstmp
+}
+
+
+##-next-main-function-##
+
+
+cuesplit(){
+if [ ! -z "$1" ]; then
+echo "
+## Splitting one audio into separate flac files corresponding to the CUE
+## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg.
+## Place to dir where located *.cue and corresponding audio, then run $0 'cuesplit'
+## No any checks, no any guarantees. Author Andrew S. License GPL
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
+"; exit 0; fi
+
+splitit(){
+    metadatalist="GENRE DATE DISCID COMMENT PERFORMER TITLE"
+    filename=$(cat "$1" | grep "FILE" -n -m 1 | sed 's/.*FILE "//g' | sed 's/".*//g' | tr -d '\r')
+    numline=$(cat "$1" | grep "FILE" -n -m 1 | sed 's/\:.*//g' | tr -d '\r')
+    metadata=""
+    for bb in $metadatalist; do
+        tmp=$(cat "$1" | head -n $numline | grep "$bb" | sed "s/.*$bb //" | sed 's/"//g' | tr -d '\r')
+        if [ -n "$tmp" ]; then
+            if [ "$bb" == "TITLE" ]; then bb="ALBUM"; fi
+            if [ "$bb" == "PERFORMER" ]; then bb="ARTIST"; fi
+            metadata+="-metadata $(echo $bb | tr '[A-Z]' '[a-z]')="
+            metadata+='"'"$tmp"'" '
+        fi
+    done
+    scr=$(mktemp tmp.XXXXXXXX)
+    tracks=$(cat "$1" | grep "TRACK" -n | sed 's/\:.*//g' | tr -d '\r')
+    for tt in $tracks; do
+        startpoint="$(cat "$1" | tail -n +$tt | grep INDEX -n -m 1 | sed 's/.* //g' | tr -d '\r')"
+        endpoint="$(cat "$1" | tail -n +$tt | grep INDEX -n -m 2 | grep -v "$startpoint" | sed 's/.* //g' | tr -d '\r')"
+        eph="$(cat "$1" | tail -n +$tt | grep TRACK -n -m 2 | grep -v "1:" | sed 's/: .*//g' | tr -d '\r')"
+        if [ -z "$eph" ]; then eph=$(cat "$1" | tail -n +$tt | wc -l); fi
+        trackno="$(cat "$1" | tail -n +$tt | head -n 1 | sed 's/.*TRACK //g' | sed 's/ .*//g' | tr -d '\r')"
+        metatrack="-metadata track=$trackno "
+        title="$(cat "$1" | tail -n +$tt | head -n "$eph" | grep TITLE | sed 's/.*TITLE //g' | sed 's/"//g' | tr -d '\r')"
+        if [ -n "title" ]; then 
+            metatrack+="-metadata title="
+            metatrack+='"'"$title"'" '
+        fi
+        spms=$(echo $startpoint | sed 's/[0-9][0-9]://g')
+        sp=$((10#$(echo $startpoint | sed "s/:$spms//g" | sed 's/:/*60+10#/g'))).$spms
+        if [ -z "$endpoint" ]; then
+            echo "$ffmpeg" -i '"'$filename'"' -ss $sp $metadata $metatrack '"'"$trackno"_"$title".flac'"' "&" >>$scr
+        else
+            epms=$(echo $endpoint | sed 's/[0-9][0-9]://g')
+            ep=$((10#$(echo $endpoint | sed "s/:$epms//g" | sed 's/:/*60+10#/g'))).$epms
+            echo "$ffmpeg" -i '"'$filename'"' -ss $sp -to $ep $metadata $metatrack '"'"$trackno"_"$title".flac'"' "&" >>$scr
+        fi
+    done
+    echo wait >>$scr
+    chmod +x $scr
+    ./$scr
+    rm -f $scr
+}
+
+for ll in *.cue; do
+    splitit "$ll"
+done
+}
+
+
+##-next-main-function-##
+
+
+fdrch+(){
+if [ -n "$1" ]||[ -n "$4" ]&&[ "$4" != "i" ]&&[ "$4" != "ic" ]||[ -n "$6" ]&&[ "$6" != "f" ]||[ -n "$7" ]&&[ "$7" != "s" ]; then
+echo " 
+## Force Dynamic Range Compression to center cHannel+, other channels 
+## normalized by default. Multichannels and multistreams are supported.
+## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg, tee, fold
+## Use: $0 fdrch+ '' [a_codec] [a_bitrate] [i,ic] [fmts] [f] [s] 
+## a_codec: flac, ac3, eac3, vorbis... a_bitrate: 512, 1536... in kbps;
+## i: normalize channels individually... ic: 'i' + light compress (
+## not recommended for multichannel but could be good for stereo/mono);
+## fmts: 'mkv' (by default), 'mkv mp4', 'webm' and so on;
+## f: fdrc-mode i.e. force dynamic range high compression to stereo/mono; 
+## s: silent progressbar (prevent a noticeable waste of time with small files)
+## There are no any checks, so the probability of failure is high.
+## Author Andrew S. License GPL https://[github,gitlab].com/quarkscript/
+"; exit 1; fi
+
+## internal funcs
+ming1(){
+## take the min (max because of inversed values) from all channels volume amplifiers
+## Author Andrew S. License GPL [github,gitlab].com/quarkscript/
+all=$(echo $(cat $1 | grep g1 | grep -v FC | sed "s/.*=//g" | sed 's/dB//g'))
+min=$(echo $all | sed 's/ .*//g')
+for k in $all; do
+    min1=$(echo $min | sed 's/\..*//g')
+    min2=$(echo $min | sed 's/.*\.//g')
+    k1=$(echo $k | sed 's/\..*//g')
+    k2=$(echo $k | sed 's/.*\.//g')
+    #if [ "$(echo $k1 | sed 's/-//g')" -eq "$(echo $min1 | sed 's/-//g')" ]&&[ "$(echo $k2 | sed 's/-//g')" -lt "$(echo $min2 | sed 's/-//g')" ]||[ "$(echo $k1 | sed 's/-//g')" -lt "$(echo $min1 | sed 's/-//g')" ]; then
+    #if [ "$k1" -eq "$min1" ]&&[ "$k2" -lt "$min2" ]||[ "$k1" -lt "$min1" ]; then
+    if [ "$k1" -eq "$min1" ]&&[ "$k2" -gt "$min2" ]||[ "$k1" -gt "$min1" ]; then
+        min=$k
+    fi
+done
+echo $min    
+}
+
+if [ "$7" == "s" ]; then
+showprogress(){
+    nonefunc=1
+}
+else
+showprogress(){
+## progressbar
+## Author Andrew S. License GPL [github,gitlab].com/quarkscript/
+runtime=10
+sleep $runtime ## start delay, to prevent autoend
+## this function is way too expensive, don't decrease timestep less than 5 second
+if $(ls | grep -q stream_tmp_data. ); then
+    timestep=10
+    totaltime=$(("((10#"$(cat $1 | grep Duration -m 1 | sed 's/,.*//g' | sed 's/.*\: //g' | sed 's/\:/)\*60+10#/g' | sed 's/\..*//g')))
+    while $(ls | grep -q stream_tmp_data. ); do
+        runtime=$(($runtime+$timestep))
+        progress=0
+        wholerun=0
+        barsize=$(($(tput cols)-18))
+        printline="|"
+        for ffl in stream_tmp_data.* ; do
+            tmp1=$(cat $ffl 2>/dev/null | grep 'time=' | tail -n 1 | sed 's/.*time=//g' | sed 's/\..*//g' | sed 's/\:/)\*60+10#/g' | sed 's/\..*//g')
+            tmp2="((10#"$tmp1
+            if [ -n "$tmp1" ]; then
+                wholerun=$(($totaltime+$wholerun))
+                progress=$(($tmp2+$progress))
+            fi
+        done
+        if [ "$wholerun" -gt "0" ]; then
+            wprog=$(($progress*$barsize/$wholerun))
+        else
+            wprog=0
+        fi
+        for ((plt=1; plt<=$(($wprog)); plt++)); do
+            printline+="#"
+        done
+        for ((plt=1; plt<=$(($barsize-$wprog)); plt++)); do
+            printline+="."
+        done
+        if [ "$wprog" -gt "0" ]; then
+            eta=$(($runtime*($barsize-$wprog)/($wprog*60)))
+        else
+            eta=""
+        fi
+        printline+="| ETA ~ $eta m "
+        echo -en "\r$(tput setaf 2)$printline$(tput sgr0)$(tput el)"
+        sleep $timestep
+    done
+    barsize=$(($(tput cols)-18))
+    printline="|"
+    for ((plt=1; plt<=$barsize; plt++)); do
+        printline+="#"
+    done
+    printline+="| DONE"
+    echo -en "\r$printline$(tput el)"
+    echo ""
+fi
+}
+fi
+
+get_ch_gain(){
+    ## get channel gain
+    wf=$(mktemp stream_tmp_data.XXXXXXXXXXX)
+    $ffmpeg -i "$1" -hide_banner -filter_complex "$2" -f null /dev/null 2>$wf
+    #ch_g=$(cat $wf | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+    ch_g=$(cat $wf | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/ //g')
+    echo " $3=$ch_g""dB ">>$4
+    rm -f $wf
+}
+        
+astrem_calc(){            
+    ptmf=$(head -n $3 $2 2>&1 | tail -n 1 )
+    astream_lng=$(echo $ptmf | sed 's/)\:.*//g' | sed 's/.*(//g' | sed 's/)//g')
+    astream_id=$(echo $ptmf | sed 's\.*0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g')
+    astream_ch=$(echo $ptmf | sed 's\.*Hz, \\g'| sed 's/\,.*//g') # | sed 's\(.*\\g')
+    astream_fr=$(echo $ptmf | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
+    astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
+    astream_bitrate=$(echo $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
+    astream_sf=fltp
+    echo 'File: '$1 |& tee -a calcs.log
+    echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Codec: $astream_cod" |& tee -a calcs.log
+    list_of_ch=$($ffmpeg -layouts -hide_banner | grep "$astream_ch" | grep -v "$astream_ch(" | sed "s/$astream_ch//g" | sed 's/ //g' | sed 's/\+/ /g')
+    echo $list_of_ch >>calcs.log
+    
+    ## some checks ##
+    if [ ! -z "$6" ]; then
+        astream_bitrate=$6
+    elif ( ! $(echo $astream_bitrate | grep [1-9][0-9][0-9] -q) ); then
+        astream_bitrate=512
+    fi
+    astream_bitrate+=k
+    if [ ! -z "$5" ]; then
+        astream_cod=$5
+    fi
+    case $astream_cod in
+        opus)   astream_cod=libopus
+        ;;
+        vorbis) astream_cod=libvorbis
+        ;;
+        mp3)    astream_cod=libmp3lame
+    esac
+    
+#     ## customize bitrate
+#     if [ "$astream_id" == "1" ]; then
+#         astream_bitrate=160k
+#     else
+#         astream_bitrate=500k
+#     fi
+    
+    ## allow to use some experimental codecs
+    case $astream_cod in
+        dts)    astream_cod+=" -strict -2"
+            echo "!!!   Try experimental codec implementation. It's not a good idea, actually"
+            echo "!!!   Channels may be reduced, for example 6.1 to 5.1"
+        ;;
+        truehd) astream_cod+=" -strict -2"
+            echo "!!!   Try experimental codec implementation. It's not a good idea, actually"
+    esac
+    
+    tmp_tmp=$(mktemp tmp.XXXXXXXXX)
+    
+    ## fdrc-mode for stereo/mono
+    if [ "$astream_ch" == "stereo" ]; then
+        astream_inputs=2
+    elif [ "$astream_ch" == "mono" ]; then
+        astream_inputs=1
+    else
+        astream_inputs=$(($(echo $astream_ch | sed 's/(.*//g' | sed 's/\./\+/g')))
+    fi
+    if [ "$astream_inputs" -le 2 ]&&[ "$9" != "" ]; then fdrc_p=1; else fdrc_p=0; fi
+    
+    ## select compressor options
+    if [ "$7" == "ic" ]&&[ "$fdrc_p" -ne 1 ]; then
+        compressor_settings="acompressor=link=maximum:ratio=2:attack=0.2:release=2000:detection=peak:threshold=-20dB"
+        echo Light compression to all channels, except LFE
+    else
+        compressor_settings="acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB"
+    fi
+    
+    echo Calculating first level gains...
+    for j1 in $list_of_ch; do
+        get_ch_gain "$1" "[0:$astream_id]channelsplit=channel_layout=$astream_ch:channels=$j1[link1];[link1]volumedetect" "g1:$astream_id:$j1" "$tmp_tmp" &
+    done
+    showprogress $2 &
+    wait
+    
+    echo "Calculating second level gain(s)"
+    for j1 in $list_of_ch; do
+        if [ "$7" == "ic" ]&&[ "$j1" != "LFE" ]||[ "$fdrc_p" -eq 1 ]; then
+            g1=$(gainlim "$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')" "0.0")
+            get_ch_gain "$1" "[0:$astream_id]channelsplit=channel_layout=$astream_ch:channels=$j1[link1];[link1]volume=$g1 [link2];[link2]$compressor_settings[link3];[link3]volumedetect" "g2:$astream_id:$j1" "$tmp_tmp" &
+        fi
+        if [ "$j1" == "FC" ]&&[ "$7" != "ic" ]; then
+            g1=$(gainlim "$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')" "0.0")
+            get_ch_gain "$1" "[0:$astream_id]channelsplit=channel_layout=$astream_ch:channels=$j1[link1];[link1]volume=$g1 [link2];[link2]$compressor_settings[link3];[link3]volumedetect" "g2:$astream_id:$j1" "$tmp_tmp" &
+        fi
+    done
+    showprogress $2 &
+    wait
+    
+    filter_string="$ffmpeg -guess_layout_max 0  -i "'"'
+    #filter_string='$ffmpeg -i "'
+    filter_string+="$1"'"'
+    filter_string+=" -hide_banner -metadata:s:a:0 language=$astream_lng -metadata:s:a:0 title="'"'"$8"'"'" -filter_complex "'"'
+    filter_string+="[0:$astream_id]channelsplit=channel_layout=$astream_ch"
+    for j1 in $list_of_ch; do
+        filter_string+="[in$j1]"
+    done
+    filter_string+=";"
+    for j1 in $list_of_ch; do
+        if [ -z "$7" ]; then
+            g1=$(ming1 "$tmp_tmp")
+        else
+            g1=$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')
+            g1=$(echo $g1 | sed 's/ //g')
+        fi
+        if [ "$j1" != "FC" ]&&[ "$7" != "ic" ]&&[ "$fdrc_p" -ne 1 ]||[ "$j1" == "LFE" ]; then
+            if [ "$j1" == "LFE" ]&&[ -n "$7" ]; then
+            ## limit LFE amplify
+                tmpvar=5.0dB
+            else
+                tmpvar=0.01dB
+            fi
+            filter_string+="[in$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g1" "$tmpvar")dB [$j1];"
+        else
+            g1=$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')
+            g1=$(echo $g1 | sed 's/ //g')
+            g2=$(cat $tmp_tmp | sed "s/.*g2\:$astream_id\:$j1=//g" | sed 's/ .*//g')
+            g2=$(echo $g2 | sed 's/ //g')
+            filter_string+="[in$j1]volume=$(gainlim "$g1" "0.0dB")dB [l1$j1];[l1$j1]$compressor_settings [l2$j1];[l2$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g2" '0.01dB')dB [$j1];"
+        fi
+    done
+    for j1 in $list_of_ch; do
+        filter_string+="[$j1]"
+    done
+    
+    filter_string+="amerge=inputs=$astream_inputs [Out]" 
+    filter_string+='" -map "[Out]"'
+    #filter_string+=" -c:a $astream_cod -b:a $astream_bitrate $fsf -vn -sn -dn tmp.$astream_id.mka &"
+    ## switch libvorbis 2 channel from bitrate to quality
+    if [ "$astream_inputs" -le 2 ]&&[ "$astream_cod" == "libvorbis" ]; then
+        filter_string+=" -c:a $astream_cod -q $(($(echo $astream_bitrate | sed 's/k//g' | sed 's/M//g')/51)) $fsf""-channel_layout "'"'"$astream_ch"'"'" -vn -sn -dn tmp.$astream_id.mka 2>stream_tmp_data.$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1) &"
+    else
+        filter_string+=" -c:a $astream_cod -b:a $astream_bitrate $fsf""-channel_layout "'"'"$astream_ch"'"'" -vn -sn -dn tmp.$astream_id.mka 2>stream_tmp_data.$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 6 | head -n 1) &"
+    fi
+
+    cat $tmp_tmp >>calcs.log
+    rm -f $tmp_tmp
+    echo "$filter_string" | sed -e 's/ 2>.*//g'>>calcs.log
+    echo "$filter_string">>$4
+}
+
+file_processing(){
+    scr=$(mktemp tmp.XXXXXXXXX)
+    tmf=$(mktemp tmp.XXXXXXXXX)
+    $ffmpeg -hide_banner -i "$1" 2>$tmf
+    echo ''
+    echo Calculations can be time consuming. Be patient.
+    for i in $(cat $tmf | grep "Audio" -n | sed 's/:.*//g'); do
+        echo ""
+        titles=$(cat $tmf | tail -n +$i | grep --regexp=Audio --regexp=title | head -n 2 | grep title | grep -v --regexp=ubtitle | sed 's/.*\: //g')
+        astrem_calc "$1" "$tmf" "$i" "$scr" "$3" "$4" "$5" "$titles" "$6"
+    done
+    echo wait>>$scr
+    echo "rm -f stream_tmp_data.* ">>$scr
+    rm -f tmp.*.mka
+    chmod +x $scr 
+    echo Encoding...
+    ./$scr &
+    showprogress $tmf &
+    wait
+    echo Remuxing...
+    streams_num=$(($($ffmpeg -hide_banner -i "$1" 2>&1| grep Stream -c)-1))
+    count=1
+    comp_string1="$ffmpeg -hide_banner -i "'"'"$1"'" '
+    comp_string2+="-c copy "
+    for (( ll=0 ; ll<=$streams_num; ll++ )); do
+        if [ -f "tmp.$ll.mka" ]; then
+            comp_string1+="-i tmp.$ll.mka "
+            comp_string2+="-map $count:0 "
+            count=$(($count+1))
+        else
+            comp_string2+="-map 0:$ll "
+        fi
+    done
+    echo "$comp_string1 $comp_string2 "'"'"$2$1"'"'>>calcs.log
+    echo "$comp_string1 $comp_string2 "'"'"$2$1"'"'>$scr
+    ./$scr 
+    rm -f $tmf $scr
+}
+
+## main script
+prefix="cdrc_"
+if [ -z "$5" ]; then fmts="mkv"; else fmts="$5"; fi
+lst=$(mktemp lst.XXXXXXXXX)
+rm -f stream_tmp_data.*
+for i in $fmts; do
+    find  -maxdepth 1 -not -name "$prefix*" -name "*.$i" | sed 's|\.\/||g'>>$lst
+done
+if [ "$(cat $lst)" == "" ]; then
+    echo "
+    It seems there is not a single $(echo $fmts | sed 's/ / or /g') file, so there is nothing to process
+    "
+    rm -f $lst
+    exit 0
+fi
+enf=$(wc -l $lst | sed 's/ lst.*//g')
+for (( j=1; j<=$enf; j+=1)); do
+    file_processing "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$2" "$3" "$4" "$6"
+    rm -f tmp.*.mka
+done
+rm -f $lst #tmp.*.mka
+}
+
+
+##-next-main-function-##
+
+
+mpeh(){
+if [ ! -z "$1" ]; then echo "
+## x264 experimental Multi-Pass Encoding Helper script. It allow to find a 
+## 'high motion' zones and increase bitrate of them, 
+## by cost of slightly decreasing bitrate of other frames.
+## Zones are bordered by specified persent of selected frame types 
+## with max texture sizes (by default).
+## Req.: bash, grep, sed, cat, sort, awk, echo, x264 1st-pass log file
+## Use: place x264_2pass.log to same dir and run - $0 mpeh
+## $0 mpeh '' '2pass.log' '5' '1.5' '[I,P,B,b,any]' 'sfz' '[tex,mv]' '500'
+## 5 - border frames persent of zones frames (15 or less)
+## 1.5 - bitrate multiplicator for zones
+## I or P or B or b or any - frame type for analysis, P by default
+## sfz - use a single frame as a zone, by default '' i.e. yes
+## Condition for analysis: tex - texture, mv - motion vectors.
+## 500 - interval threshold, by default is double keyframe interval.
+## All parameters are optional
+## There are no any checks, so the probability of failure is high.
+## Author Andrew S. License GPLv2. 
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
+"; exit 0; fi
+if [ -z "$2" ]; then
+    stats_file="x264_2pass.log"
+elif [ -f "$2" ]; then
+    stats_file=$2
+else
+    echo $2 not a regular file. Exit.
+    exit 1
+fi
+if [ -z "$3" ]; then
+    border_frames_persent=5 ## there is no sense to increase it too high
+elif [ "$3" -ge 16 ]; then
+    echo 'Zone frames percent too high. Exit.'
+    exit 1
+else
+    border_frames_persent=$3
+fi
+if [ -z "$4" ]; then
+    bitrate_multipl=1.5     ## too high value can leads to a noticeable degrade quality out of zones
+else
+    bitrate_multipl=$4
+fi
+if [ -z "$5" ]||[ "$5" == "P" ]; then
+    frame_type="type:P"
+elif [ "$5" == "I" ]; then
+    frame_type="type:I"
+elif [ "$5" == "B" ]; then
+    frame_type="type:B"
+elif [ "$5" == "b" ]; then
+    frame_type="type:b"
+elif [ "$5" == "any" ]; then
+    frame_type="type:"
+else
+    echo Wrong option $5. Exit
+    exit 1
+fi
+if [ -z "$8" ]; then
+    itvl_thrsh=$(($(cat "$stats_file" | head -n 1 | sed 's/.*keyint\=//g' | sed 's/ .*//g')*2))
+elif [[ "$8" =~ ^[0-9]+$ ]]; then
+    itvl_thrsh=$8
+else
+    echo Wrong interval threshold, integer only. Exit.
+    exit 1
+fi
+
+tmp=$(mktemp tmp.XXXXXXXXX)
+
+if [ -z "$7" ]||[ "$7" == "tex" ]; then
+    echo "$""2 > "$(cat "$stats_file" | grep "$frame_type" -n | sed 's/.*tex\://g' | sed 's/ .*//g' | sort -nr | head -n $(($(cat "$stats_file" | grep "$frame_type" --count)*$border_frames_persent/100)) | tail -n 1)" " >>$tmp
+    f_list=$(cat "$stats_file" | grep "$frame_type" | sed 's/.*out\://g' | sed 's/ .*tex\:/ /g' | sed 's/ mv.*//g' | awk -f "$tmp" | sed 's/ .*//g')
+elif [ "$7" == "mv" ]; then
+    echo "$""2 > "$(cat "$stats_file" | grep "$frame_type" -n | sed 's/.*mv\://g' | sed 's/ .*//g' | sort -nr | head -n $(($(cat "$stats_file" | grep "$frame_type" --count)*$border_frames_persent/100)) | tail -n 1)" " >>$tmp
+    f_list=$(cat "$stats_file" | grep "$frame_type" | sed 's/.*out\://g' | sed 's/ .*mv\:/ /g' | sed 's/ misc.*//g' | awk -f "$tmp" | sed 's/ .*//g')
+else
+    echo Wrong option $7. Exit.
+    rm -f $tmp
+    exit 1
+fi
+rm -f $tmp
+pr_frame=$(echo $f_list | sed 's/ .*//g')
+bg_zone=$pr_frame
+for cur_frame in $f_list; do
+    if [ "$(($cur_frame-$pr_frame))" -gt "$itvl_thrsh" ]; then
+        if [ -z "$6" ]||[ "$pr_frame" != "$bg_zone" ]; then
+            zns+="$bg_zone,$pr_frame,b=$bitrate_multipl/"
+            bg_zone=$cur_frame
+        fi
+    fi
+    pr_frame=$cur_frame
+done
+zns+="XXX"
+zns=$(echo $zns | sed 's/\/XXX//g')
+if $(echo $zns | grep -q XXX); then
+    echo '
+Something goes wrong. Zones separation fail. 
+Is awk installed? 
+Is video long enough? 
+Is video has a dynamic scenes?
+If all yes try to vary options of mpeh function.
+'
+else
+    echo $zns >fzones
+    echo '
+copy fzones to encoding dir and
+add next option to x264 command: 
+--zones $(cat fzones)
+'
+fi
+}
+
+
+##-next-main-function-##
+
+
+nit(){
+if ($(echo $@ | grep -q --regexp="-h" --regexp="help")); then
+echo "
+## nit - 'normalize it' (bash script that normalize the volume of audio files)
+## Required: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find
+## Use: $0 nit [audio file extensions] [options] [pref:newfileprefix]
+## [audio file extensions] are like: mp3, wav, ogg and so on. (mp3 by default)
+## [options] are like: 44100hz, 320kbps, [f-ogg,f-mp3,f-wav,f-flac,f-webm,f-m4a], -r
+## -r means recursive (by default is not)
+## f-* means forced output format to one of those [ogg mp3 wav flac webm/opus m4a]
+## *hz means output frequency in Hz
+## *kbps means bitrate in kbps
+## pref:newfileprefix must be the last parameter on the line, empty is allowed
+## It are all optional, by default will be used detected parameters
+## -h or help gives this small help
+## Multiplexing of covers currently supported for mp3 and flac only. 
+## Otherwise covers will be extracted.
+## There are not all checks, so the probability of failure is high.
+## Author Andrew S. License GPLv2 [github,gitlab].com/quarkscript/
+"; exit 0 ; fi
+inargs=$(echo $@ | sed 's/,//g' | sed 's/"//g' | sed "s/'//g")
+echo '  Prepare:'
+rm -f list.tmp thread*list.tmp
+proc_fmts="mp3 ogg wav flac webm m4a" ## set the supported forced output formats
+for pfg in $proc_fmts; do
+    reserved+="f-$pfg "
+done
+reserved+=" -r [0-9][0-9][0-9][0-9][0-9][0-9]hz [0-9][0-9][0-9][0-9][0-9]hz [0-9][0-9][0-9][0-9]hz [0-9][0-9][0-9]kbps [0-9][0-9]kbps "
+extns=$inargs
+for ii in $reserved; do
+    extns=$(echo $extns | sed "s/$ii//g")
+done
+extns=$(echo $extns | sed "s/pref\:.*//g")
+if [ -z "$extns" ]; then
+    extns=mp3
+    echo "By default mp3 files will be processed"
+else
+    echo "Will be processed: $(echo $extns | sed 's/  / /g' | sed 's/ /, /g') files"
+fi
+if $(echo $inargs | grep -q --regexp='f-'); then
+    outformat=$(echo $inargs | sed "s/.*f-//g" | sed 's/ .*//g')
+    echo "Output format forced to $outformat"
+    ok=""
+    for chk in $proc_fmts; do
+        if [ "$outformat" == "$chk" ]; then
+            ok=ok
+            break
+        fi
+    done
+    if [ -z "$ok" ]; then
+    echo "
+    Wrong output format: $outformat
+    "
+    exit 1
+    fi
+else
+    outformat=""
+fi 
+if $(echo $inargs | grep -q --regexp="hz"); then
+    freq=$(echo $inargs | sed 's/hz.*//g' | sed 's/.* //g')
+    echo $freq"Hz will be forced to all files during normalization"
+else
+    freq=""
+fi
+if $(echo $inargs | grep -q --regexp="kbps"); then
+    bitrate="$(echo $inargs | sed 's/kbps.*//g' | sed 's/.* //g')"
+    echo $bitrate"kbps will be forced to all files during normalization"
+else
+    bitrate=""
+fi
+threads=$(($(grep 'model name' /proc/cpuinfo --count)+1))
+echo "Up to $threads threads can be used simultaneously"
+if $(echo $inargs | grep -q --regexp='-r'); then
+    echo "-r is specified, all files from all subdirs will be processed"
+    mdp=""
+else 
+    echo "-r is not specified, files from subfolders will be not processed"
+    mdp="-maxdepth 1"
+fi
+prefix=$(echo $inargs | sed "s/.*pref\://g")
+#if [ "$(echo $inargs | grep -c --regexp='pref:')" -gt 0 ] && [ ! -z "$prefix" ]; then
+## allow empty prefix, no overwrite for duplicates
+if [ "$(echo $inargs | grep -c --regexp='pref:')" -gt 0 ]; then
+    echo "Normalized files prefix specified to '$prefix'"
+else
+    prefix=n_
+    echo "Default normalized files prefix is '$prefix'"
+fi
+for iii in $extns; do
+    if [ -z "$prefix" ]; then
+        find  $mdp -name "*.$iii" | sed 's|\.\/||g'>>list.tmp
+    else
+        find  $mdp -not -name "$prefix*" -name "*.$iii" | sed 's|\.\/||g'>>list.tmp
+    fi
+done
+filesnum=$(wc -l list.tmp | sed 's/ list.tmp//g')
+if [ "$filesnum" -eq "0" ]; then
+    echo "Files with extensions: $(echo $extns | sed 's/ /, /g') not found. Exit"
+    exit 0
+else
+    count=1
+    ## check minimal limit of files for multithreads processing
+    if [ "$filesnum" -gt "$(($threads*0+2))" ]; then
+        count_inc=1
+    else
+        count_inc=0
+    fi
+    for (( jj=1; jj <= $filesnum; ++jj )); do
+        if [ "$count" -eq "$(($threads+1))" ]; then
+            count=1
+        fi
+        head -n $jj list.tmp 2>&1 | tail -n 1 >>"thread_"$count"_list.tmp"
+        count=$(($count+$count_inc))
+    done
+    rm -f tmp.tmp
+fi
+if [ "$filesnum" -eq 1 ]; then
+    echo "only one file will be normalized"
+else
+    echo "$filesnum files will be normalized at all"
+fi
+echo "  Processing:"
+
+normalize_it() {
+    flsnum=$(wc -l $1 | sed "s/ $1//g")
+    for (( cycle_list=1; cycle_list <= $flsnum; ++cycle_list )); do
+        filename=$(head -n $cycle_list $1 2>&1 | tail -n 1)
+        fileprop=$($ffmpeg -hide_banner -i "$filename" 2>&1 | grep --regexp=Audio --regexp=bitrate)
+        fr=$(echo $fileprop | sed 's\ Hz.*\\g' | sed 's\.*, \\g')
+        cod=$(echo $fileprop | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
+        bitrate=$(echo $fileprop | sed 's\ kb/s.*\\g' | sed 's\.* \\g')
+        ## Get file properties by ffmpeg. Depending of ffmpeg version, cut-mask may vary and may not work
+        ## If something goes wrong you can uncomment next 4 lines and correct cut-mask for your version of ffmpeg
+#         echo "$filename
+#         $fileprop
+#         $fr    $cod    $bitrate"
+#         exit 0
+        if [ ! -z "$2" ]; then
+            cod=$2
+        fi
+        if [ ! -z "$4" ]; then
+            bitrate=$4
+        fi
+        if [ ! -z "$3" ]; then
+            fr=$3
+        fi
+        if $(echo $filename | grep -q --regexp="/"); then
+            fnt=$(echo $filename | sed 's/.*\///g')
+            filepath=$(echo $filename | sed "s/$fnt//g")
+        else
+            filepath=""
+            fnt="$filename"
+        fi
+        if [ ! -z "$2" ]; then
+            outfile="$filepath$5${fnt%.*}.$2"
+        else
+            outfile="$filepath$5$fnt"
+        fi
+        covertest=$($ffmpeg -hide_banner -i "$filename" 2>&1 | grep --regexp="Stream")
+        ## extract first cover if container is not supported cover embendding
+        if [ "$cod" != "flac" ]&&[ "$cod" != "mp3" ]; then
+            if $(echo $covertest | grep --regexp="Video" -m 1 | grep -q --regexp=" png"); then
+                $ffmpeg -hide_banner -i "$filename" -c:v copy -an "${outfile%.*}.png"
+            elif $(echo $covertest | grep --regexp="Video" -m 1 | grep -q --regexp=" mjpeg"); then
+                $ffmpeg -hide_banner -i "$filename" -c:v copy -an "${outfile%.*}.jpg"
+            fi
+        elif $(echo $filename | grep -q --regexp="flac" --regexp="mp3"); then 
+        ## for mp3 and flac copy cover(s)
+            copycover="-c:v copy"
+        else
+            copycover=""
+        fi
+        ## amplifyer limit - 0.01dB applied only if it less then generateg gain
+        #ampl=$(gainlim $($ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 0.01dB)
+        ampl=$(gainlim $($ffmpeg -hide_banner -i "$filename" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/ //g') 0.01dB)
+        if [ "$cod" == "mp3" ]; then
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar "$fr" -c:a libmp3lame -b:a "$bitrate"k $copycover "$outfile"
+        elif [ "$cod" == "vorbis" ] || [ "$cod" == "ogg" ]; then
+            if [ "$bitrate" -le 127 ]; then
+                q=3
+            elif [ "$bitrate" -le 159 ]; then
+                q=4
+            elif [ "$bitrate" -le 190 ]; then
+                q=5
+            elif [ "$bitrate" -le 220 ]; then
+                g=6
+            elif [ "$bitrate" -le 250 ]; then
+                q=7
+            elif [ "$bitrate" -le 300 ]; then
+                q=8
+            elif [ "$bitrate" -le 500 ]; then
+                q=9
+            else
+                q=10
+            fi
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libvorbis -aq $q -f oga "$outfile"
+        elif [ "$cod" == "webm" ]; then ## libopus as encoder
+            ## ffmpeg support a limited frequencies for libopus encoder
+            if $($ffmpeg -help encoder=libopus -hide_banner | grep 'Supported sample rates' | sed 's/.*\://g' | grep -vq $fr); then
+                fr=48000
+            fi
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libopus -b:a "$bitrate"k -vn "$outfile"
+        elif [ "$cod" == "m4a" ]; then
+            ## for use libfdk_aac instead of aac just uncomment next 4 commented lines
+            #if $($ffmpeg -encoders -hide_banner 2>&1 | grep -q libfdk_aac); then 
+            #    $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a libfdk_aac -b:a "$bitrate"k -movflags +faststart -vn "$outfile"
+            #else
+                $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a aac -b:a "$bitrate"k -movflags +faststart -vn "$outfile"
+            #fi
+        elif [ "$cod" == "flac" ]; then
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 $copycover "$outfile"
+        elif [ "$cod" == "wav" ]; then
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -vn "$outfile"
+        else
+            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -b:a "$bitrate"k "$outfile"
+        fi
+    done
+}
+for (( jjj=1; jjj <= $(find -maxdepth 1 -name 'thread*list.tmp' | grep -c thread_); ++jjj )); do
+    normalize_it "thread_"$jjj"_list.tmp" "$outformat" "$freq" "$bitrate" "$prefix" &
+done
+wait
+rm -f thread*list.tmp list.tmp
+}
+
+
+##-next-main-function-##
+
+
+lca() {
+if ($(echo $@ | grep -q --regexp="-h" --regexp="help")); then
+echo "
+## lca - Local Cover Add to: mp3, flac, mka -audio files
+## Required: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find
+## Use: $0 lca [audio file extensions] [f-mka] [-r] [pref:newfileprefix]
+## [audio file extensions] like: mp3, wav, ogg and so on. (mp3 by default)
+## -r means recursive (by default is not); f-mka - force to mux all files in mka
+## pref:newfileprefix must be the last parameter on the line. This script search local
+## jpg and png images named same as audio files or like 'folder' 'cover' and so on.
+## -h or help gives this small help
+## Multiplexing of covers currently supported for mp3 and flac only. 
+## Otherwise, covers will be muxed to mka files.
+## There are not all checks, so the probability of failure is high.
+## Author Andrew S. License GPLv2 [github,gitlab].com/quarkscript/
+"; exit 0 ; fi
+
+inargs=$(echo $@ | sed 's/,//g' | sed 's/"//g' | sed "s/'//g")
+echo '  Prepare:'
+rm -f list.tmp thread*list.tmp
+reserved+=" -r f-mka "
+extns=$inargs
+for ii in $reserved; do
+    extns=$(echo $extns | sed "s/$ii//g")
+done
+extns=$(echo $extns | sed "s/pref\:.*//g")
+if [ -z "$(echo $extns | sed 's/ //g')" ]; then
+    extns='mp3'
+    echo "By default mp3 files will be processed"
+else
+    echo "Will be processed: $(echo $extns | sed 's/  / /g' | sed 's/ /, /g') files"
+fi
+if $(echo $inargs | grep -q --regexp="f-mka"); then
+    echo "force muxing to *.mka"
+    outformat=mka
+else
+    outformat=''
+fi
+threads=$(($(grep 'model name' /proc/cpuinfo --count)+1))
+echo "Up to $threads threads can be used simultaneously"
+if $(echo $inargs | grep -q --regexp='-r'); then
+    echo "-r is specified, all files from all subdirs will be processed"
+    mdp=""
+else 
+    echo "-r is not specified, files from subfolders will be not processed"
+    mdp="-maxdepth 1"
+fi
+prefix=$(echo $inargs | sed "s/.*pref\://g")
+if [ "$(echo $inargs | grep -c --regexp='pref:')" -gt 0 ] && [ ! -z "$prefix" ]; then
+## empty prefix isn't allowed
+    echo "Files prefix specified to '$prefix'"
+else
+    prefix=artd_
+    echo "Default files prefix is '$prefix'"
+fi
+for iii in $extns; do
+        find  $mdp -not -name "$prefix*" -name "*.$iii" | sed 's|\.\/||g'>>list.tmp
+done
+filesnum=$(wc -l list.tmp | sed 's/ list.tmp//g')
+if [ "$filesnum" -eq "0" ]; then
+    echo "Files with extensions: $(echo $extns | sed 's/ /, /g') not found. Exit"
+    exit 0
+else
+    count=1
+    ## check minimal limit of files for multithreads processing
+    if [ "$filesnum" -gt "$(($threads*0+2))" ]; then
+        count_inc=1
+    else
+        count_inc=0
+    fi
+    for (( jj=1; jj <= $filesnum; ++jj )); do
+        if [ "$count" -eq "$(($threads+1))" ]; then
+            count=1
+        fi
+        head -n $jj list.tmp 2>&1 | tail -n 1 >>"thread_"$count"_list.tmp"
+        count=$(($count+$count_inc))
+    done
+    rm -f tmp.tmp
+fi
+if [ "$filesnum" -eq 1 ]; then
+    echo "only one file will be muxed with cover"
+else
+    echo "$filesnum files will be muxed with cover, if covers available locally"
+fi
+echo "  Processing:"
+
+art_it() {
+    flsnum=$(wc -l $1 | sed "s/ $1//g")
+    for (( cycle_list=1; cycle_list <= $flsnum; ++cycle_list )); do
+        filename=$(head -n $cycle_list $1 2>&1 | tail -n 1)
+        if [ ! -z "$2" ]; then
+            cod=$2
+        elif $(echo $filename | sed 's/.*\.//g' | grep -q --regexp='mp3' --regexp='flac'); then
+            cod="$(echo $filename | sed 's/.*\.//g' | sed 's/ //g')"
+        else
+            cod='mka'
+        fi
+        if $(echo $filename | grep -q --regexp="/"); then
+            fnt=$(echo $filename | sed 's/.*\///g')
+            filepath=$(echo $filename | sed "s/$fnt//g")
+        else
+            filepath=""
+            fnt="$filename"
+        fi
+        outfile="$filepath$3${fnt%.*}.$cod"
+
+## search local cover art by mask
+coverpath=$(find -name "*.*" | sed 's@\.\/@@g' | grep -x --regexp="${filename%.*}."[Pp][Nn][Gg] \
+--regexp="${filename%.*}."[Jj][Pp][Gg] \
+--regexp="$filepath"[Ff][Oo][Ll][Dd][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Ff][Oo][Ll][Dd][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Cc][Oo][Vv][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Cc][Oo][Vv][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Ll][Bb][Uu][Mm].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Ll][Bb][Uu][Mm].[Jj][Pp][Gg] \
+--regexp="$filepath"[Bb][Aa][Cc][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Bb][Aa][Cc][Kk].[Jj][Pp][Gg] \
+--regexp="$filepath"[Ff][Rr][Oo][Nn][Tt].[Pp][Nn][Gg] \
+--regexp="$filepath"[Ff][Rr][Oo][Nn][Tt].[Jj][Pp][Gg] \
+--regexp="$filepath"[Dd][Ii][Ss][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Dd][Ii][Ss][Kk].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Oo][Ll][Dd][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Oo][Ll][Dd][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Cc][Oo][Vv][Ee][Rr].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Cc][Oo][Vv][Ee][Rr].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Aa][Ll][Bb][Uu][Mm].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Aa][Ll][Bb][Uu][Mm].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Bb][Aa][Cc][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Bb][Aa][Cc][Kk].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Rr][Oo][Nn][Tt].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Ff][Rr][Oo][Nn][Tt].[Jj][Pp][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Dd][Ii][Ss][Kk].[Pp][Nn][Gg] \
+--regexp="$filepath"[Aa][Rr][Tt][Ww][Oo][Rr][Kk]/[Dd][Ii][Ss][Kk].[Jj][Pp][Gg] --m 1) 
+
+        if [ "$coverpath" != "" ]; then 
+            ## muxing
+            if [ "$cod" != "mka" ]; then
+                $ffmpeg -hide_banner -i "$filename" -i "$coverpath" -map 0:a -c:a copy -map 1 -c copy "$outfile"
+            else
+                $ffmpeg -hide_banner -i "$filename" -map 0:a -c:a copy -attach "$coverpath" -metadata:s:1 mimetype=image/"$(echo $coverpath | sed 's/.*\.//g' | sed 's/ //g' | sed 's/\(.*\)/\L\1/')" "$outfile"
+            fi
+        else 
+            echo "Cover not found. File '$filename' ignored"
+        fi
+    done
+
+}
+for (( jjj=1; jjj <= $(find -maxdepth 1 -name 'thread*list.tmp' | grep -c thread_); ++jjj )); do
+    art_it "thread_"$jjj"_list.tmp" "$outformat" "$prefix" &
+done
+wait
+rm -f thread*list.tmp list.tmp
+}
+
+
+##-next-main-function-##
+
+
+nvenc2mp4(){
+if [ ! -z "$1" ]; then echo "
+## Fast transcoding (mkv webm flv ts avi) to compatible format with an old TV
+## i.e. *.mp4 {H264 =<30fps =<1920x1080 + aac normalized drc}
+## Req: bash, hash, grep, head, tail, wc, mediainfo, ffmpeg with nvenc support,
+## nvidia GT 630 or better (except 1030) and installed proprietary Nvidia drivers
+## Use: $0 nvenc2mp4                                      OR
+## $0 nvenc2mp4 '' '[no,novp]' '50M' 'mkv webm flv ts avi'
+## 'no' - do not use dynamic range compression for audio volume
+## 'novp' - do not process audio volume
+## 50M - custom video bitrate
+## Author Andrew S. License GPL
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts
+" ;exit 0 ;fi
+##
+## set custom video bitrate
+if [ ! -z "$3" ]
+then v_rate="-b:v $3"
+else v_rate=""
+fi
+## max output video resolution
+rvw=1920
+rvh=1080
+## max output video frame rate
+mvfr=30
+## extensions
+if [ -z "$4" ]; then
+    extns="mkv webm flv ts avi"
+else 
+    extns="$4"
+fi
+##
+rm -f list.tmp fn.tmp finf.tmp
+for j in $extns; do
+        find -maxdepth 1 -type f -name "*.$j" | sed -e "s/.\///g" >>list.tmp
+done
+if [ "$(wc -l list.tmp | sed -e 's/ list.tmp//g' )" -eq "0" ]; then
+        echo "
+Files with extensions: $(echo $extns | sed 's/ /, /g')
+not found. Copy video sources to current dir 
+or rename existed to any of specified extensions. Exit now."
+else
+    if (hash $ffmpeg 2>/dev/null)&&($($ffmpeg -encoders -hide_banner | grep h264_nvenc -q))&&(hash mediainfo 2>/dev/null); then
+            while [ $((j+=1)) -le "$(wc -l list.tmp | sed -e 's/ list.tmp//g' )" ]; do
+                    tail -n $j list.tmp>fn.tmp
+                    i="$(head -n 1 fn.tmp)"
+                    echo Processing $i
+                    param=""
+                    mediainfo "$i" >finf.tmp
+                    ccids=$(cat finf.tmp | grep "Codec ID" | sed -e 's/Codec ID//g' | sed -e 's/\://g' | sed -e 's/\/Info//g')
+                    vidfps=$(cat finf.tmp | grep FPS | grep -v SPF | grep -o -e "[0-9][0-9][.]" | sed -e 's/\.//g')
+                    vidw=$(cat finf.tmp | grep Width | sed -e 's/\://g' | sed -e 's/Width//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+                    vidh=$(cat finf.tmp | grep Height | sed -e 's/\://g' | sed -e 's/Height//g' | sed -e 's/pixels//g' | sed -e 's/ //g')
+                    audch=$(cat finf.tmp | grep "Channel(s)" -m 1 | sed -e 's/\://g' | sed -e 's/Channel(s)//g' | sed -e 's/channels//g' | sed -e 's/ //g')
+                    if [ "$vidw" -gt "$rvw" ] || [ "$vidh" -gt "$rvh" ]; then
+                            param+='-vf scale=h='$rvh':force_original_aspect_ratio=decrease:flags=fast_bilinear '
+                    fi
+                    ## for list of video codec params execute from shell "ffmpeg -help encoder=nvenc_h264"
+                    param+='-c:v h264_nvenc -coder cabac -preset hq -rc vbr_hq  '
+                    param+="$v_rate "
+                    if [ "$vidfps" -gt "$(($mvfr+1))" ]; then
+                            param+="-r $mvfr "
+                    fi
+                    if [ "$audch" -gt "2" ]; then
+                            audparam="-ac 2 "
+                    else
+                            audparam=""
+                    fi
+                    if [ -z "$2" ]; then
+                        audparam+="-af acompressor=link=maximum:ratio=10:attack=0.1:release=2000:detection=peak:threshold=-20dB"
+                        echo DRC is on, audio gain will be bigger
+                    elif [ "$2" == "no" ]; then
+                        audparam+="-af acopy"
+                        echo DRC is off
+                    elif [ "$2" != "novp" ]; then
+                        echo Wrong parameter! $2
+                        exit 1
+                    fi
+                    if [ "$2" != "novp" ]; then
+                        echo Calculating audio gain...
+                        vol_up=$($ffmpeg -i "$i" -hide_banner $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+                        echo ... $vol_up dB
+                    else 
+                        audparam+="-af acopy"
+                        vol_up=0
+                    fi
+                    if [ "$(echo $vol_up | sed -e 's/\.//g')" -gt "639" ]; then 
+                            vol_up=64
+                    fi
+                    vol_up+=dB
+                    param+="-c:a aac $audparam,volume=$vol_up "
+                    if ($(echo $ccids | grep -q --regexp=264 --regexp=AVC --regexp=avc))&&(!($(echo $param | grep -q scale))); then
+                        hwac="-hwaccel cuda"
+                        # hwac="-hwaccel cuvid"
+                        echo Used internal nvidia transcoding mechanism
+                    else
+                        hwac=""
+                    fi
+                    $ffmpeg $hwac -i "$i" $param "${i%.*}.mp4" -hide_banner
+            done
+    elif !(hash $ffmpeg 2>/dev/null); then
+        echo "ffmpeg not found. Exit now."
+    elif !($($ffmpeg -encoders -hide_banner | grep h264_nvenc -q)); then
+        echo "ffmpeg doesn't support h264_nvenc. Exit now."
+    elif !(hash mediainfo 2>/dev/null); then
+        echo "mediainfo not found. Exit now."
+    fi
+fi
+rm -f list.tmp fn.tmp finf.tmp
+}
+
+
+##-next-main-function-##
+
+
+tempo(){
+if [ -z "$1" ]||[ "$1" == "help" ]||[ "$1" == "--help" ]||[ "$1" == "-h" ]; then echo "
+Fail: Missing input argument - input audio format.. i.e. $0 tempo '*.mp3'
+                                                                '' requred
+## Normalizing, converting to ogg and change speed of music from 0.5 to 2.0
+## No any checks, no any guarantees. By default speed is 1.5 
+## Use: $0 tempo '*.format' OR $0 tempo '*.format' 'speed' 
+## Author Andrew S. Licence GPLv2 or GPLv3 Req.: bash, grep, sed, ffmpeg
+## https://github.com/quarkscript/media_works
+## https://gitlab.com/quarkscript/media_shell_scripts/
+"
+    exit 1
+else
+    flst=$1
+fi
+if [ -z "$2" ]; then
+    tempo_factor=1.5
+else
+    tempo_factor=$2
+fi
+conv() { 
+lvlup=$($ffmpeg -i "$1" -af "volumedetect" -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g') 
+afc="-af volume=$lvlup"
+afc+="dB"
+# afc+=",atempo=$2"
+# $ffmpeg -i "$1" -acodec libvorbis -aq 9 -ar 48000 -f oga $afc "$2"X"${1%.*}.ogg" -hide_banner
+## It seems atempo drops some frames and made poor quality, there is another option but it affects pitch too
+arate=$($ffmpeg -hide_banner -i "$1" -f null /dev/null 2>&1 |  grep "Audio" -m 1 | sed -e 's/ Hz.*//g' | sed -e 's/.*, //g')
+rate=$(echo $arate | sed 's/.* //g')
+$ffmpeg -i "$1" -af asetrate=$(($rate*$(echo $tempo_factor | sed -e 's/\.//g')/10)) "${1%.*}.wav" -hide_banner
+$ffmpeg -i "$1" -i "${1%.*}.wav" -map_metadata 0 -map 1 -ar $rate -acodec libvorbis -aq 9 -f oga $afc "$2"X"${1%.*}.ogg" -hide_banner
+#$ffmpeg -i "${1%.*}.wav" -ar $rate -acodec libvorbis -aq 9 -f oga $afc "$2"X"${1%.*}.ogg" -hide_banner
+rm -f "${1%.*}.wav"
+}
+threads=$(($(grep 'model name' /proc/cpuinfo --count)+0))
+count=0
+for i in $flst; do
+    conv "$i" "$tempo_factor"&
+    count=$(($count+1))
+    if [ "$count" == "$threads" ]; then
+        wait
+        count=0
+    fi
+done
+wait
+}
+
+
+## end of main functions
+############################
+## execute required function
+
+
+if $(echo $1 | grep -q --regexp="ffmpeg="); then
+    ffmpeg="$(echo "$1" | sed 's/ffmpeg=//g')"
+    st_in=2 #$2 "$3" "$4" "$5" "$6" "$7" "$8" "$9"
+else
+    ffmpeg=ffmpeg
+    st_in=1 #$1 "$2" "$3" "$4" "$5" "$6" "$7" "$8"
+fi
+inpar=$#
+exefunc=''
+for ((c_y=$st_in; c_y<=$inpar; c_y+=1)); do
+  exefunc+='"${'$c_y'}" '
+done
+eval $exefunc
