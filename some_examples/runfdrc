@@ -9,7 +9,7 @@ curdir="$(dirs)"
 for ((i=2;i<=$(wc -l $tmp | sed "s@ $tmp@@g");i++)); do
     cp -f msslib "$(head -n $i $tmp 2>&1 | tail -n 1)"/msslib
     cd "$(head -n $i $tmp 2>&1 | tail -n 1)"
-    ./msslib fdrc
+    ./msslib fdrch+ '' '' '' '' '' f
     cd "$curdir"
     rm -f "$(head -n $i $tmp 2>&1 | tail -n 1)"/msslib
 done
