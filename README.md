@@ -18,6 +18,4 @@ There are [**old versions of scripts**](archive)
 
 There are some [**examples**](some_examples) of how it can be used
 
-### Some demonstration of work 
-./[**msslib**](msslib) fdrch+
-![fig1](fdrch_demo.gif)
+![fig1](some_examples/fdrch+multichannel.png)
