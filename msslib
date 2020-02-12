@@ -555,11 +555,11 @@ astrem_calc(){
     echo "Calculating second level gain(s)"
     for j1 in $list_of_ch; do
         if [ "$7" == "ic" ]&&[ "$j1" != "LFE" ]||[ "$fdrc_p" -eq 1 ]; then
-            g1=$(gainlim "$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')" "0.0")
+            g1=$(gainlim "$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')" "0.0")dB
             get_ch_gain "$1" "[0:$astream_id]channelsplit=channel_layout=$astream_ch:channels=$j1[link1];[link1]volume=$g1 [link2];[link2]$compressor_settings[link3];[link3]volumedetect" "g2:$astream_id:$j1" "$tmp_tmp" &
         fi
-        if [ "$j1" == "FC" ]&&[ "$7" != "ic" ]; then
-            g1=$(gainlim "$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')" "0.0")
+        if [ "$j1" == "FC" ]&&[ "$7" != "ic" ]&&[ "$astream_inputs" -gt 1 ]; then
+            g1=$(gainlim "$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')" "0.0")dB
             get_ch_gain "$1" "[0:$astream_id]channelsplit=channel_layout=$astream_ch:channels=$j1[link1];[link1]volume=$g1 [link2];[link2]$compressor_settings[link3];[link3]volumedetect" "g2:$astream_id:$j1" "$tmp_tmp" &
         fi
     done
@@ -590,6 +590,10 @@ astrem_calc(){
                 tmpvar=0.01dB
             fi
             filter_string+="[in$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g1" "$tmpvar")dB [$j1];"
+        elif [ "$astream_inputs" -eq 1 ]&&[ "$fdrc_p" -ne 1 ]&&[ "$j1" == "FC" ]&&[ "$7" != "ic" ]; then
+            g1=$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')
+            g1=$(echo $g1 | sed 's/ //g')
+            filter_string+="[in$j1]aformat=sample_fmts=$astream_sf:sample_rates=$astream_fr:channel_layouts=$j1,volume=$(gainlim "$g1" "0.01")dB [$j1];"
         else
             g1=$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')
             g1=$(echo $g1 | sed 's/ //g')
@@ -638,10 +642,10 @@ file_processing(){
     showprogress $tmf &
     wait
     echo Remuxing...
-    streams_num=$(($($ffmpeg -hide_banner -i "$1" 2>&1| grep Stream -c)-1))
+    streams_num=$(($($ffmpeg -hide_banner -i "$1" 2>&1 | grep -v Guessed | grep Stream -c)-1))
     count=1
-    comp_string1="$ffmpeg -hide_banner -i "'"'"$1"'" '
-    comp_string2+="-c copy "
+    comp_string1="$ffmpeg -hide_banner -fflags +genpts  -i "'"'"$1"'" '
+    comp_string2="-c copy "
     for (( ll=0 ; ll<=$streams_num; ll++ )); do
         if [ -f "tmp.$ll.mka" ]; then
             comp_string1+="-i tmp.$ll.mka "
