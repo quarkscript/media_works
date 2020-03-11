@@ -10,6 +10,7 @@ Media Shell Scripts LIBrary. It allow override system ffmpeg and it contain:
 > cuesplit - Splitting one audio into separate flac files corresponding to the CUE
 > tempo - overclock or underclock speed of audio files
 > lca - local cover add to: mp3, flac, mka -audio files
+> r2f - remux media file to specified format
 
 Use: $0 func_name [func_params] OR $0 func_name -h 
 OR $0 'ffmpeg=/path_to_ffmpeg' func_name [func_params]
@@ -165,9 +166,9 @@ gen_and_run_scr(){
             if [ "$apresent" -eq 1 ]; then
                 echo "
                 runfunc$count(){
-                $ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-                $ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
-                $ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+                $ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.wav.$count.mka
+                $ffmpeg -hide_banner -i tmp.wav.$count.mka -af afilter$count@ -c:a pcm_f32le tmp2.wav.$count.mka
+                $ffmpeg -hide_banner -i tmp2.wav.$count.mka -ar $audfr $audio_encoder_string tmp.$count.mka
                 }
                 runfunc$count &">>$proc_scr
                 muxcnf="-i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0"
@@ -178,16 +179,16 @@ gen_and_run_scr(){
             $ffmpeg -hide_banner -ss $startpoint -to $i -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
             wait
             $ffmpeg -hide_banner $muxcnf cut.$count.mkv
-            rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
+            rm -f tmp.wav.$count.mka tmp2.wav.$count.mka tmp.$count.mkv tmp.$count.mka ">>$proc_scr
             count=$(($count+1))
             startpoint=$i
         done  
         if [ "$apresent" -eq 1 ]; then
             echo "
             runfunc$count(){
-            $ffmpeg -hide_banner -ss $startpoint -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            $ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
-            $ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+            $ffmpeg -hide_banner -ss $startpoint -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.wav.$count.mka
+            $ffmpeg -hide_banner -i tmp.wav.$count.mka -af afilter$count@ -c:a pcm_f32le tmp2.wav.$count.mka
+            $ffmpeg -hide_banner -i tmp2.wav.$count.mka -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc$count &">>$proc_scr
             muxcnf="-i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0"
@@ -198,14 +199,14 @@ gen_and_run_scr(){
         $ffmpeg -hide_banner -ss $startpoint -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
         wait
         $ffmpeg -hide_banner $muxcnf cut.$count.mkv
-        rm -f tmp.$count.wav tmp2.$count.wav tmp.$count.mkv tmp.$count.mka ">>$proc_scr
+        rm -f tmp.wav.$count.mka tmp2.wav.$count.mka tmp.$count.mkv tmp.$count.mka ">>$proc_scr
     else
         if [ "$apresent" -eq 1 ]; then
             echo "
             runfunc(){
-            $ffmpeg -hide_banner -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.$count.wav
-            $ffmpeg -hide_banner -i tmp.$count.wav -af afilter$count@ -c:a pcm_f32le tmp2.$count.wav
-            $ffmpeg -hide_banner -i tmp2.$count.wav -ar $audfr $audio_encoder_string tmp.$count.mka
+            $ffmpeg -hide_banner -i '$1' -ar arate$count@ -c:a pcm_f32le -vn tmp.wav.$count.mka
+            $ffmpeg -hide_banner -i tmp.wav.$count.mka -af afilter$count@ -c:a pcm_f32le tmp2.wav.$count.mka
+            $ffmpeg -hide_banner -i tmp2.wav.$count.mka -ar $audfr $audio_encoder_string tmp.$count.mka
             }
             runfunc &">>$proc_scr
             muxcnf="-i tmp.$count.mkv -i tmp.$count.mka -c copy -map 0:0 -map 1:0"
@@ -216,7 +217,7 @@ gen_and_run_scr(){
         $ffmpeg -hide_banner -i '$1' $video_encoder_string -vf 'setpts=PTS/speed$count@$video_filters_string' -an tmp.$count.mkv &
         wait
         $ffmpeg -hide_banner $muxcnf cut.$count.mkv
-        rm -f tmp.$count.mkv tmp.$count.mka tmp.$count.wav tmp2.$count.wav ">>$proc_scr
+        rm -f tmp.$count.mkv tmp.$count.mka tmp.wav.$count.mka tmp2.wav.$count.mka ">>$proc_scr
     fi
     count=1
     tmp1=$(mktemp XXXXXXXXXXXXXXX.tmp)
@@ -485,6 +486,7 @@ astrem_calc(){
     astream_cod=$(echo $ptmf | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
     astream_bitrate=$(echo $ptmf | sed 's\ kb.*\\g' | sed 's\.*, \\g')
     astream_sf=fltp
+    echo '' >> calcs.log
     echo 'File: '$1 |& tee -a calcs.log
     echo "Stream 0:$astream_id Channels: $astream_ch Frequency: $astream_fr Bitrate: $astream_bitrate Codec: $astream_cod" |& tee -a calcs.log
     list_of_ch=$($ffmpeg -layouts -hide_banner | grep "$astream_ch" | grep -v "$astream_ch(" | sed "s/$astream_ch//g" | sed 's/ //g' | sed 's/\+/ /g')
@@ -1351,6 +1353,34 @@ for i in $flst; do
     fi
 done
 wait
+}
+
+
+##-next-main-function-##
+
+
+r2f(){
+if [ -z $1 ]||[ "$1" == "-h" ]; then
+    echo "
+## remux media files to specified format (mkv by default)
+## $0 r2f 'flv' 
+## $0 r2f 'flv' 'mp4'
+## no any checks, fails are possible
+## uses: ffmpeg, mktemp, ls, cat, sed, head, tail, wc
+    "; exit 0
+fi
+if [ -z "$2" ]; then
+    fmt=mkv
+else
+    fmt=$2
+fi
+list=$(mktemp XXXXX.tmp)
+ls | grep "$1" >$list
+for ((i=1;i<=$(wc -l $list | sed 's/ .*//g');i++)); do
+    filename=$(cat $list | head -n $i | tail -n 1 )
+    $ffmpeg -hide_banner -i "$filename" -c copy "${filename%.*}".$fmt
+done
+rm -f $list
 }
 
 
