@@ -502,15 +502,19 @@ echo "
 ## Force Dynamic Range Compression to center cHannel+, other channels 
 ## normalized by default. Multichannels and multistreams are supported.
 ## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg, tee, fold
-## Use: $0 fdrch+ '' [a_codec] [a_bitrate] [i,ic] [fmts] [f] [s] 
+## Use: $0 fdrch+ '' ['a_codec'] ['a_bitrate'] [i,ic] ['fmts'] [f] [s] ['cc']
+## All parameters are optional; first empty quotes is a foolproof.
 ## a_codec: flac, ac3, eac3, vorbis... a_bitrate: 512, 1536... in kbps;
 ## i: normalize channels individually... ic: 'i' + light compress (
 ## not recommended for multichannel but could be good for stereo/mono);
 ## fmts: 'mkv' (by default), 'mkv mp4', 'webm' and so on;
 ## f: fdrc-mode i.e. force dynamic range high compression to stereo/mono; 
 ## s: silent progressbar (prevent a noticeable waste of time with small files)
+## cc: custom compressor, you may directly specify it as you want, by default it's:
+## 'acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB'
+## with [ic] param ['cc'] will be applied to all channels with some exception
 ## There are no any checks, so the probability of failure is high.
-## Author Andrew S. License GPL https://[github,gitlab].com/quarkscript/
+## Author Andrew S. https://[github,gitlab].com/quarkscript/ License GPL
 "; exit 1; fi
 
 ## internal funcs
@@ -677,7 +681,10 @@ astrem_calc(){
     tmp_tmp=$(mktemp tmp.XXXXXXXXX)
     
     ## select compressor options
-    if [ "$7" == "ic" ]&&[ "$fdrc_p" -ne 1 ]; then
+    if [ ! -z "${10}" ]; then
+        compressor_settings="${10}"
+        echo An attempt will be made to use the specified audio compressor, but it has not been verified to be correct. 
+    elif [ "$7" == "ic" ]&&[ "$fdrc_p" -ne 1 ]; then
         compressor_settings="acompressor=link=maximum:ratio=2:attack=0.2:release=2000:detection=peak:threshold=-20dB"
         echo Light compression to all channels, except LFE
     else
@@ -693,7 +700,7 @@ astrem_calc(){
     
     echo "Calculating second level gain(s)"
     for j1 in $list_of_ch; do
-        if [ "$7" == "ic" ]&&[ "$j1" != "LFE" ]||[ "$fdrc_p" -eq 1 ]; then
+        if [ "$7" == "ic" ]&&[ "$j1" != "LFE" ]||[ "$fdrc_p" -eq 1 ]&&[ "$j1" != "LFE" ]; then
             g1=$(gainlim "$(cat $tmp_tmp | sed "s/.*g1\:$astream_id\:$j1=//g" | sed 's/ .*//g')" "0.0")dB
             get_ch_gain "$1" "[0:$astream_id]channelsplit=channel_layout=$astream_ch:channels=$j1[link1];[link1]volume=$g1 [link2];[link2]$compressor_settings[link3];[link3]volumedetect" "g2:$astream_id:$j1" "$tmp_tmp" &
         fi
@@ -771,7 +778,7 @@ file_processing(){
     for i in $(vfpe $tmf audio_stream_starts); do
         echo ""
         titles=$(cat $tmf | tail -n +$i | grep --regexp=Audio --regexp=title | head -n 2 | grep title | grep -v --regexp=ubtitle | sed 's/.*\: //g')
-        astrem_calc "$1" "$tmf" "$i" "$scr" "$3" "$4" "$5" "$titles" "$6"
+        astrem_calc "$1" "$tmf" "$i" "$scr" "$3" "$4" "$5" "$titles" "$6" "$7"
     done
     echo wait>>$scr
     echo "rm -f stream_tmp_data.* ">>$scr
@@ -818,7 +825,7 @@ if [ "$(cat $lst)" == "" ]; then
 fi
 enf=$(wc -l $lst | sed 's/ lst.*//g')
 for (( j=1; j<=$enf; j+=1)); do
-    file_processing "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$2" "$3" "$4" "$6"
+    file_processing "$(head -n $j $lst 2>&1 | tail -n 1)" "$prefix" "$2" "$3" "$4" "$6" "$8"
     rm -f tmp.*.mka
 done
 rm -f $lst #tmp.*.mka
