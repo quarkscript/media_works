@@ -504,7 +504,8 @@ echo "
 ## Req. bash-like shell, grep, sed, head, tail, wc, ffmpeg, tee, fold
 ## Use: $0 fdrch+ '' ['a_codec'] ['a_bitrate'] [i,ic] ['fmts'] [f] [s] ['cc']
 ## All parameters are optional; first empty quotes is a foolproof.
-## a_codec: flac, ac3, eac3, vorbis... a_bitrate: 512, 1536... in kbps;
+## a_codec: ''-use detected or like: 'mp3', 'mp3,ac3,flac', 'detected,mp3'...
+## a_bitrate: 512, 1536... in kbps; same scheme as for a_codec cold be used 
 ## i: normalize channels individually... ic: 'i' + light compress (
 ## not recommended for multichannel but could be good for stereo/mono);
 ## fmts: 'mkv' (by default), 'mkv mp4', 'webm' and so on;
@@ -644,14 +645,20 @@ astrem_calc(){
     if [ "$astream_inputs" -le 2 ]&&[ "$9" != "" ]; then fdrc_p=1; else fdrc_p=0; fi
     
     ## some checks ##
-    if [ ! -z "$6" ]; then
-        astream_bitrate=$6
-    elif ( ! $(echo $astream_bitrate | grep [1-9][0-9] -q) ) || ( $(echo $astream_bitrate | grep [a-z] -q) ); then
-        astream_bitrate=$((80*$astream_inputs))
-    fi
-    astream_bitrate+=k
     if [ ! -z "$5" ]; then
-        astream_cod=$5
+        if $(echo "$5" | grep -vq ','); then
+            astream_cod=$5
+        else
+            ## this may work correctly for standard muxed files only
+            ## i.e. {[one video stream][first audio stream]...[last audio stream][other streams]}
+            tmp_acodec_count=0
+            for tmp_acodec_set in $(echo "$5" | sed "s/,,/,detected,/g" | sed "s/,,/,detected,/g" | sed 's/,/ /g'); do
+                tmp_acodec_count=$(($tmp_acodec_count+1))
+                if [ "$astream_id" -eq "$tmp_acodec_count" ]&&[ "$tmp_acodec_set" != "detected" ]; then
+                    astream_cod="$tmp_acodec_set"
+                fi
+            done
+        fi
     fi
     case $astream_cod in
         opus)   astream_cod=libopus
@@ -661,12 +668,25 @@ astrem_calc(){
         mp3)    astream_cod=libmp3lame
     esac
     
-#     ## customize bitrate
-#     if [ "$astream_id" == "1" ]; then
-#         astream_bitrate=160k
-#     else
-#         astream_bitrate=500k
-#     fi
+    ## when bitrate didn't detected
+    if ( ! $(echo $astream_bitrate | grep [1-9][0-9] -q) ) || ( $(echo $astream_bitrate | grep [a-z] -q) ); then
+        astream_bitrate=$((80*$astream_inputs))
+    fi
+    ## force custom bitrate in same scheme as codec
+    if [ ! -z "$6" ]; then
+        if $(echo "$6" | grep -vq ','); then
+            astream_bitrate=$6
+        else
+            tmp_acodec_count=0
+            for tmp_acodec_set in $(echo "$6" | sed "s/,,/,detected,/g" | sed "s/,,/,detected,/g" | sed 's/,/ /g'); do
+                tmp_acodec_count=$(($tmp_acodec_count+1))
+                if [ "$astream_id" -eq "$tmp_acodec_count" ]&&[ "$tmp_acodec_set" != "detected" ]; then
+                    astream_bitrate="$tmp_acodec_set"
+                fi
+            done
+        fi
+    fi
+    astream_bitrate+=k
     
     ## allow to use some experimental codecs
     case $astream_cod in
