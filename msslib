@@ -505,7 +505,7 @@ echo "
 ## Use: $0 fdrch+ '' ['a_codec'] ['a_bitrate'] [i,ic] ['fmts'] [f] [s] ['cc']
 ## All parameters are optional; first empty quotes is a foolproof.
 ## a_codec: ''-use detected or like: 'mp3', 'mp3,ac3,flac', 'detected,mp3'...
-## a_bitrate: 512, 1536... in kbps; same scheme as for a_codec cold be used 
+## a_bitrate: 512, 1536... in kbps; same scheme as for a_codec could be used 
 ## i: normalize channels individually... ic: 'i' + light compress (
 ## not recommended for multichannel but could be good for stereo/mono);
 ## fmts: 'mkv' (by default), 'mkv mp4', 'webm' and so on;
@@ -513,6 +513,7 @@ echo "
 ## s: silent progressbar (prevent a noticeable waste of time with small files)
 ## cc: custom compressor, you may directly specify it as you want, by default it's:
 ## 'acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB'
+## any ffmpeg audio filter(s) could be used, for example 'superequalizer=1b=0.001:2b=0.001'
 ## with [ic] param ['cc'] will be applied to all channels with some exception
 ## There are no any checks, so the probability of failure is high.
 ## Author Andrew S. https://[github,gitlab].com/quarkscript/ License GPL
