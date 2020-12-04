@@ -532,7 +532,7 @@ for k in $all; do
     k2=$(echo $k | sed 's/.*\.//g')
     #if [ "$(echo $k1 | sed 's/-//g')" -eq "$(echo $min1 | sed 's/-//g')" ]&&[ "$(echo $k2 | sed 's/-//g')" -lt "$(echo $min2 | sed 's/-//g')" ]||[ "$(echo $k1 | sed 's/-//g')" -lt "$(echo $min1 | sed 's/-//g')" ]; then
     #if [ "$k1" -eq "$min1" ]&&[ "$k2" -lt "$min2" ]||[ "$k1" -lt "$min1" ]; then
-    if [ "$k1" -eq "$min1" ]&&[ "$k2" -gt "$min2" ]||[ "$k1" -gt "$min1" ]; then
+    if [ "$k1" -eq "$min1" ]&&[ "$k2" -lt "$min2" ]||[ "$k1" -gt "$min1" ]; then
         min=$k
     fi
 done
