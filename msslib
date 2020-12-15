@@ -43,7 +43,8 @@ if $(echo $1 | grep -q --regexp="-"); then signinv="" ; else signinv="-" ; fi
 if [ "${#fracvar}" -gt "${#fracval}" ]; then fracpow=${#fracvar} ; else fracpow=${#fracval} ; fi
 ## make calculations
 tmprez=$((10#$(echo $limvar | sed 's/\..*//g')*(10**$fracpow)+10#$fracvar*(10**($fracpow-${#fracvar}))-("$signinv"1)*(10#$(echo $limval | sed 's/\..*//g')*(10**$fracpow)+10#$fracval*(10**($fracpow-${#fracval})))))
-intrval=$((10#$tmprez-(10#$tmprez/(10**$fracpow))*(10**$fracpow))) ## intermediate value
+#intrval=$((10#$tmprez-(10#$tmprez/(10**$fracpow))*(10**$fracpow))) ## intermediate value
+intrval=$(($tmprez-($tmprez/(10**$fracpow))*(10**$fracpow))) ## intermediate value
 rezfract=$(echo $intrval | sed 's/-//g')
 if $(echo $intrval | grep -q --regexp="-"); then sign="-"; else sign=""; fi
 ## output rezult
