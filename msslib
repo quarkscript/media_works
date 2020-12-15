@@ -602,7 +602,7 @@ fi
 get_ch_gain(){
     ## get channel gain
     wf=$(mktemp stream_tmp_data.XXXXXXXXXXX)
-    $ffmpeg -i "$1" -hide_banner -filter_complex "$2" -f null /dev/null 2>$wf
+    $ffmpeg -i "$1" -hide_banner -filter_complex "$2" -vn -f null /dev/null 2>$wf
     #ch_g=$(cat $wf | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
     ch_g=$(cat $wf | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/ //g')
     echo " $3=$ch_g""dB ">>$4
