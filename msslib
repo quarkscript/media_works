@@ -48,8 +48,7 @@ intrval=$(($tmprez-($tmprez/(10**$fracpow))*(10**$fracpow))) ## intermediate val
 rezfract=$(echo $intrval | sed 's/-//g')
 if $(echo $intrval | grep -q --regexp="-"); then sign="-"; else sign=""; fi
 ## output rezult
-#echo $(echo $(("$signinv"1*"$sign"1)) | sed 's/1//g')$(echo $(($tmprez/(10**$fracpow)))).$(echo $((10**($fracpow-${#rezfract}))) | sed 's/1//g')"$rezfract"
-echo $(echo $((("$signinv"1*"$sign"1)*$tmprez/(10**$fracpow)))).$(echo $((10**($fracpow-${#rezfract}))) | sed 's/1//g')"$rezfract"
+echo $(echo $(("$signinv"1*"$sign"1)) | sed 's/1//g')$(echo $(($tmprez/(10**$fracpow))) | sed 's/-//g').$(echo $((10**($fracpow-${#rezfract}))) | sed 's/1//g')"$rezfract"
 }
 
 
