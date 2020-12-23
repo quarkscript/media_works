@@ -5,6 +5,7 @@ Media Shell Scripts LIBrary. It allow override system ffmpeg and it contain:
 > nvenc2mp4 -nvidia hardware accelerated video transcoding
 > mpeh - experimental helper script for x264 multi-pass encoding
 > csvc - changing the speed for video file or for cuts in video file during reencoding
+> pvp - divides the video stream to parts and processing them simultaneously
 > fdrch+ - Force Dynamic Range Compression to center cHannel + fdrc-mode
 > nit - normalize the volume of audio files
 > cuesplit - Splitting one audio into separate flac files corresponding to the CUE
@@ -1548,6 +1549,71 @@ for ((i=1;i<=$(wc -l $list | sed 's/ .*//g');i++)); do
     $ffmpeg -hide_banner -i "$filename" -c copy "${filename%.*}".$fmt
 done
 rm -f $list
+}
+
+
+##-next-main-function-##
+
+
+pvp(){
+if [ -z $1 ] || [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "--help" ] || [ "$1" == "help" ]; then
+    echo "
+##                  parallel video processing
+## this script divides the video stream to almost equally parts 
+## and processing them simultaneously, then glue and mux
+##
+## Use: $0 pvp filename [parts] [ffmpeg_string]
+## parts by default is 3
+## ffmpeg_string by default is:
+##      -vf deblock=block=4,fftdnoiz=sigma=13,eq=contrast=1.05,\\
+##      cas=strength=0.2 -c:v libx265 -crf 22 -x265-params psy-rd=0.00
+## 
+## Requires bash-like shell, ffmpeg, mkvmerge, mktemp and so on
+## There is no any checks so fails are possible.
+## 
+## Author Andrew S. [github,gitlab].com/quarkscript/ License GPL
+"; exit 0
+fi
+if [ ! -f "$1" ]; then echo "File '$1' not found"; exit 0; fi
+if [ -z "$2" ]; then
+    parts=3
+else
+    parts="$2"
+fi
+if [ -z "$3" ]; then
+    ffstring='-vf deblock=block=4,fftdnoiz=sigma=13,eq=contrast=1.05,cas=strength=0.2 -c:v libx265 -crf 22 -x265-params psy-rd=0.00'
+else
+    ffstring="$3"
+fi
+
+rm -f tmp_part*.mkv pvp_merged_video.mkv pvp_tmp_part*.mkv
+tmpdata=$(mktemp XXXXXX.tmp)
+
+$ffmpeg -i "$1" -hide_banner 2> $tmpdata
+tmpvar1=$(vfpe "$tmpdata" 'overall_duration')
+tmpvar2=$(echo $tmpvar1 | sed 's/\..*//g' | sed 's/:/)*60+10#/g' )
+tmpvar1=$(($(echo "((10#$tmpvar2"))) ## duration in seconds
+
+mkvmerge -o tmp_part.mkv --split "$(($tmpvar1/($parts)))s" --no-audio --no-subs --split-max-files "$parts" "$1"
+
+for cyclevar1 in $(ls | grep '.mkv' | grep tmp_part ); do
+    eval $(echo $ffmpeg -hide_banner -i $cyclevar1 $ffstring pvp_$cyclevar1) &
+done
+wait 
+
+tmpvar3=''
+for cyclevar1 in $(ls | grep '.mkv' | grep pvp_tmp | sort -n); do
+    if [ -z "$tmpvar3" ]; then
+        tmpvar3="$cyclevar1 "
+    else
+        tmpvar3+="+ $cyclevar1 "
+    fi
+done
+eval $(echo mkvmerge -o pvp_merged_video.mkv $tmpvar3)
+
+$ffmpeg -hide_banner -i pvp_merged_video.mkv -i $1 -c copy -map 0:v -map 1:a -map 1:s "pvp_$1"
+
+rm -f tmp_part*.mkv pvp_merged_video.mkv pvp_tmp_part*.mkv $tmpdata
 }
 
 
