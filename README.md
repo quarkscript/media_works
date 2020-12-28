@@ -22,5 +22,5 @@ There are [**old versions of scripts**](archive)
 There are some [**examples**](some_examples) of how it can be used 
 ![fig1](some_examples/fdrch+multichannel.png)
 
-Processing with singlethread video filter
+Processing with singlethreaded video filter
 ![](some_examples/msslib-pvp-example.gif)
