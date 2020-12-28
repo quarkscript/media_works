@@ -19,6 +19,8 @@ There are [**old versions of scripts**](archive)
 
 > Known issue: ffmpeg may create auto tags for mkv files; in case you have any trouble of playing processed mkv files just remux it by mkvtoolnix with unselected tags.
 
-There are some [**examples**](some_examples) of how it can be used
-
+There are some [**examples**](some_examples) of how it can be used 
 ![fig1](some_examples/fdrch+multichannel.png)
+
+Processing with singlethread video filter
+![](some_examples/msslib-pvp-example.gif)
