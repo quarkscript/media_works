@@ -2,10 +2,10 @@
 if [ -z $1 ] || [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "help" ]; then
     echo "
 Media Shell Scripts LIBrary. It allow override system ffmpeg and it contain:
-> nvenc2mp4 -nvidia hardware accelerated video transcoding
-> mpeh - experimental helper script for x264 multi-pass encoding
 > csvc - changing the speed for video file or for cuts in video file during reencoding
 > pvp - divides the video stream to parts and processing them simultaneously
+> nvenc2mp4 -nvidia hardware accelerated video transcoding
+> mpeh - experimental helper script for x264 multi-pass encoding
 > fdrch+ - Force Dynamic Range Compression to center cHannel + fdrc-mode
 > nit - normalize the volume of audio files
 > cuesplit - Splitting one audio into separate flac files corresponding to the CUE
@@ -1611,9 +1611,18 @@ for cyclevar1 in $(ls | grep '.mkv' | grep pvp_tmp | sort -n); do
 done
 eval $(echo mkvmerge -o pvp_merged_video.mkv $tmpvar3)
 
-$ffmpeg -hide_banner -i pvp_merged_video.mkv -i $1 -c copy -map 0:v -map 1:a -map 1:s "pvp_$1"
+tmpvar4=''
 
-rm -f tmp_part*.mkv pvp_merged_video.mkv pvp_tmp_part*.mkv $tmpdata
+if $($ffmpeg -i "$1" 2>&1 | grep -q Audio -m 1); then tmpvar4+=" -map 1:a"; fi
+if $($ffmpeg -i "$1" 2>&1 | grep -q Subtitle -m 1); then tmpvar4+=" -map 1:s"; fi
+
+eval $(echo "$ffmpeg -hide_banner -i pvp_merged_video.mkv -i "'"'"$1"'"'" -c copy -map 0:v $tmpvar4 "'"'"pvp_$1"'"')
+
+if [ -f "pvp_$1" ]; then
+    rm -f tmp_part*.mkv pvp_merged_video.mkv pvp_tmp_part*.mkv $tmpdata
+else
+    echo Some error happens, intermediate files not deleted
+fi
 }
 
 
