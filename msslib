@@ -184,9 +184,8 @@ echo "
 ## Multistreams are not supported, i.e. single video + single audio
 ## Use: $0 'csvc' 'speeds' 'timestamps' 'filename' 'vid_enc_set' 'vid_filt' 'aud_enc_set' 'cng'
 ## All params except 'speeds' are optional. 'vid_filt' must start from ',' By default:
-## vid_enc_set=$(cat $0 | grep 'c:v' | grep video_encoder_string | grep -v grep | sed 's/.*g=//g') 
-## vid_filt=$(cat $0 | grep video_filters_string= | grep -v --regexp='grep' --regexp='$7' | sed 's/.*g=//g') 
-## aud_enc_set=$(cat $0 | grep 'c:a' | grep audio_en | grep -v grep | sed 's/.*g=//g')     
+##  vid_enc_set=$(cat $0 | grep 'c:v' | grep video_encoder_string | grep -v grep | sed 's/.*g=//g'); vid_filt=$(cat $0 | grep video_filters_string= | grep -v --regexp='grep' --regexp='$7' | sed 's/.*g=//g'); aud_enc_set=$(cat $0 | grep 'c:a' | grep audio_en | grep -v grep | sed 's/.*g=//g').
+## (aud_enc_set+=' -ar 44100 ' - if source < 44100 Hz then force output afreq to 44100)
 ## speeds like '1.5 2.7 0.2' req. timestamps like '00:00:10.234 00:00:20.927'
 ## filename may be for example '*.avi', quotes required
 ## cng - process only first file , cuts do not glue (if you need to manipulate with cuts)
@@ -281,7 +280,16 @@ gen_and_run_scr(){
     if [ -z "$8" ]; then
         audio_encoder_string='-b:a 320k -c:a aac'
     else
-        audio_encoder_string="$8"
+        if $(echo "$8" | grep -q " -ar "); then
+            ## force minimal output audio freq., it makes sense when source freq. < 44100 Hz
+            audfr_lim=$(echo "$8" | sed 's/.*-ar //g' | sed 's/ .*//g')
+            if [ "$audfr" -lt "$audfr_lim" ]; then
+                audfr=$(echo "$audfr_lim")
+            fi
+            audio_encoder_string=$(echo "$8" | sed "s/ -ar//g" | sed "s/ $audfr_lim//g" )
+        else
+            audio_encoder_string="$8"
+        fi
     fi
 
     ## gen processing script
@@ -1613,8 +1621,12 @@ eval $(echo mkvmerge -o pvp_merged_video.mkv $tmpvar3)
 
 tmpvar4=''
 
-if $($ffmpeg -i "$1" 2>&1 | grep -q Audio -m 1); then tmpvar4+=" -map 1:a"; fi
-if $($ffmpeg -i "$1" 2>&1 | grep -q Subtitle -m 1); then tmpvar4+=" -map 1:s"; fi
+if $(cat $tmpdata | grep -q Audio -m 1); then tmpvar4+=" -map 1:a"; fi
+if $(cat $tmpdata | grep -q Subtitle -m 1); then tmpvar4+=" -map 1:s"; fi
+## copy jpg cover if available
+#if $(cat $tmpdata | grep Video | grep -q mjpeg -m 1); then 
+#    tmpvar4+=" -map 1:$(cat $tmpdata | grep Video | grep mjpeg -m 1 | sed 's/Video.*//g' | sed 's/.*#0://g' | sed 's/:.*//g')"
+#fi
 
 eval $(echo "$ffmpeg -hide_banner -i pvp_merged_video.mkv -i "'"'"$1"'"'" -c copy -map 0:v $tmpvar4 "'"'"pvp_$1"'"')
 
