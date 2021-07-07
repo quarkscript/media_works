@@ -13,6 +13,7 @@ Media Shell Scripts LIBrary. It allow override system ffmpeg and it contain:
 > lca - local cover add to: mp3, flac, mka -audio files
 > r2f - remux media file to specified format
 (> test_vfpe - test internal video file properties extractor)
+> spg - simple pseudo gui
 
 Use: $0 func_name [func_params] OR $0 func_name -h 
 OR $0 'ffmpeg=/path_to_ffmpeg' func_name [func_params]
@@ -66,7 +67,7 @@ if [ -z $1 ] || [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "help" ]||[
 ## funcs:
 ## video_streams_count, audio_streams_count, stream_blocks_borders,
 ## stream_lang, video_stream_starts, audio_stream_starts, video_stream_id,
-## video_stream_codec, video_stream_widht, video_stream_heigh, 
+## video_stream_codec, video_stream_width, video_stream_heigh, subtitle_streams_count,
 ## video_stream_fps, video_stream_bitrate, audio_stream_id, audio_stream_codec,
 ## audio_stream_freq, audio_stream_bitrate, audio_stream_channels, 
 ## overall_duration, overall_bitrate, metadata, media_file_size.
@@ -92,6 +93,8 @@ if [ "$2" == "video_streams_count" ]; then
     cat "$tmpfile22" | grep Stream | grep Video --count
 elif [ "$2" == "audio_streams_count" ]; then
     cat "$tmpfile22" | grep Stream | grep Audio --count
+elif [ "$2" == "subtitle_streams_count" ]; then
+    cat "$tmpfile22" | grep Stream | grep Subtitle --count
 elif [ "$2" == "stream_blocks_borders" ]; then
     echo $(cat "$tmpfile22" | grep Stream -n | sed 's/\:.*//g')
 elif [ "$2" == "stream_lang" ]; then
@@ -109,10 +112,10 @@ elif [ "$2" == "video_stream_id" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's\.*#0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g')
 elif [ "$2" == "video_stream_codec" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's\.*Video: \\g' | sed 's/ .*//g' | sed 's/,.*//g')
-elif [ "$2" == "video_stream_widht" ]; then
-    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/x[1-9][0-9],.*//g' | sed 's/x[1-9][0-9][0-9],.*//g' | sed 's/x[1-9][0-9][0-9][0-9],.*//g' | sed 's/.* //g')
+elif [ "$2" == "video_stream_width" ]; then
+    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/x[1-9][0-9].*//g' | sed 's/x[1-9][0-9][0-9].*//g' | sed 's/x[1-9][0-9][0-9][0-9].*//g' | sed 's/.* //g')
 elif [ "$2" == "video_stream_heigh" ]; then
-    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/.* [1-9][0-9]x//g' | sed 's/.* [1-9][0-9][0-9]x//g' | sed 's/.* [1-9][0-9][0-9][0-9]x//g' | sed 's/, .*//g')
+    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/.* [1-9][0-9]x//g' | sed 's/.* [1-9][0-9][0-9]x//g' | sed 's/.* [1-9][0-9][0-9][0-9]x//g' | sed 's/ .*//g')
 elif [ "$2" == "video_stream_fps" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/ fps.*//g' | sed 's/.* //g')
 elif [ "$2" == "video_stream_bitrate" ]; then
@@ -152,7 +155,7 @@ rm -f $tmpfile22
 
 ## (some gebug func) ##
 test_vfpe(){
-if [ -z $1 ] || [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "help" ]; then
+if [ -z "$1" ] || [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "help" ]; then
     echo "
 ## checking how to works media prop detection
 ## use: $0 test_vfpe 'media file' 
@@ -164,7 +167,7 @@ exit 0; fi
 
 fftmp=$(mktemp XXXXXXXXXX.tmp)
 $ffmpeg -i "$1" -hide_banner 2>$fftmp
-for cycletest in video_streams_count audio_streams_count stream_blocks_borders stream_lang video_stream_starts audio_stream_starts video_stream_id video_stream_codec video_stream_widht video_stream_heigh video_stream_fps video_stream_bitrate audio_stream_id audio_stream_codec audio_stream_freq audio_stream_bitrate audio_stream_channels overall_duration overall_bitrate metadata media_file_size; do
+for cycletest in video_streams_count audio_streams_count stream_blocks_borders stream_lang video_stream_starts audio_stream_starts video_stream_id video_stream_codec video_stream_width video_stream_heigh video_stream_fps video_stream_bitrate audio_stream_id audio_stream_codec audio_stream_freq audio_stream_bitrate audio_stream_channels overall_duration overall_bitrate metadata media_file_size; do
     echo $cycletest
     vfpe "$fftmp" "$cycletest"
     echo ''
@@ -244,7 +247,7 @@ gen_and_run_scr(){
     #audfr=$(cat $fintmp | grep "Sampling rate" | sed 's/ kHz.*//g' | sed 's/.* //g' | sed 's/\.//g')"00"
     ##
     $ffmpeg -i "$1" -hide_banner 2>$fintmp
-    vidw=$(vfpe $fintmp video_stream_widht)
+    vidw=$(vfpe $fintmp video_stream_width)
     vidh=$(vfpe $fintmp video_stream_heigh)
     audfr=$(vfpe $fintmp audio_stream_freq)
     apresent=$(vfpe $fintmp audio_streams_count)
@@ -1166,7 +1169,7 @@ normalize_it() {
             elif [ "$bitrate" -le 190 ]; then
                 q=5
             elif [ "$bitrate" -le 220 ]; then
-                g=6
+                q=6
             elif [ "$bitrate" -le 250 ]; then
                 q=7
             elif [ "$bitrate" -le 300 ]; then
@@ -1420,7 +1423,7 @@ else
             $ffmpeg -i "$i" -hide_banner 2>finf.tmp
             ccids=$(vfpe finf.tmp video_stream_codec)
             vidfps=$(vfpe finf.tmp video_stream_fps)
-            vidw=$(vfpe finf.tmp video_stream_widht)
+            vidw=$(vfpe finf.tmp video_stream_width)
             vidh=$(vfpe finf.tmp video_stream_heigh)
             audch=$(vfpe finf.tmp audio_stream_channels)
             if [ "$vidh" -gt "$rvh" ]&&[ "$((($vidh*$rvw)/$rvh))" -ge $vidw ]; then
@@ -1429,9 +1432,9 @@ else
                 param+='-vf scale=w='$rvw':h='$((($rvw*$vidh)/$vidw))':flags=fast_bilinear '
             fi
             ## for list of video codec params execute from shell "ffmpeg -help encoder=nvenc_h264"
-            param+='-c:v h264_nvenc -coder cabac -preset hq -rc vbr_hq  '
+            param+='-c:v h264_nvenc -coder 1 -tune hq '
             param+="$v_rate "
-            if [ "$vidfps" -gt "$(($mvfr+1))" ]; then
+            if [ "$(echo $vidfps | sed 's/\..*//g')" -gt "$(($mvfr+1))" ]; then
                 param+="-r $mvfr "
             fi
             if [ "$audch" == "mono" ]||[ "$audch" == "stereo" ]; then
@@ -1451,7 +1454,7 @@ else
             fi
             if [ "$2" != "novp" ]; then
                 echo Calculating audio gain...
-                vol_up=$($ffmpeg -i "$i" -hide_banner $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
+                vol_up=$($ffmpeg -i "$i" -hide_banner -vn $audparam,volumedetect -f null /dev/null 2>&1 | grep max_volume | grep max_volume | grep -o -E "[- ][0-9][0-9.][0-9 .][0-9 ]" | sed -e 's/-//g' | sed -e 's/ //g')
                 echo ... $vol_up dB
             else 
                 audparam+="-af acopy"
@@ -1640,8 +1643,626 @@ fi
 
 ## end of main functions
 ############################
-## execute required function
+## simple pseudo-gui
 
+spg(){
+## it lets users use Xdialod or dialog for interactions with functions
+## spg '[Xdialog,dialog]'
+if $(Xdialog --version 2>&1 | grep -vq 'command not found') && [ -z "$1" ]; then
+    dialog=Xdialog
+elif $(dialog --version 2>&1 | grep -vq 'command not found') && [ -z "$1" ]; then
+    dialog=dialog
+elif $($1 --version 2>&1 | grep -vq 'command not found') && [ ! -z "$1" ]; then
+    dialog="$1"
+else
+    echo '
+    Xdialog or dialog not founded
+    pseudo gui will not work without them
+    '
+    exit 1
+fi
+
+dialog_exitstatus=$(mktemp XXXXXXXX.tmp)
+clear
+
+$dialog --title "Simple pseudo gui of $0" --radiolist "This 'ui' provides reduced actions of msslib (a scripts for ffmpeg)\n It does not check anything, so scripts may fail when something absent or wrong.\nDeveloper: Andrew S.   https://[github,gitlab].com/quarkscript   License GPL\n\nWhat do you want to do?   (Use mice or space (Tab) button to select item)" '38' '100' '' \
+'csvc' 'change the speed for video file or for cuts in video file during reencoding' '' \
+'pvp' 'divide the video file to parts and processing them simultaneously' '' \
+'nvenc2mp4' 'transcode a video to mp4 by ffmpeg with nvidia encoder ' '' \
+'mpeh' 'experimental helper script for x264 multi-pass encoding' '' \
+'fdrch+' 'force dynamic range compression to audio volume on video files' '' \
+'nit' 'normalize the volume of audio files' '' \
+'cuesplit' 'split one audio into separate flac files corresponding to the cue-list' '' \
+'tempo' 'overclock or underclock the speed of audio files' '' \
+'lca' 'add a local covers to: mp3, flac or mka -audio files' '' \
+'r2f' 'remux media files to specified format' '' \
+'ffmpeg' "use system's ffmpeg for other actions with media" 'on' 2>$dialog_exitstatus
+clear
+
+efs() {
+    ## encoders and filters selector ['aeveafvf']
+    ## ae - audio encoder
+    ## ve - video encoder
+    ## af - audio filters
+    ## vf - video filters
+    
+    tmpvar7=""
+        
+    if $(echo $1 | grep -q 'vf'); then
+        tmpvar10=1
+        tmpvar11=''
+        while [ "$tmpvar10" -gt 0 ]; do
+            var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Append video filter" '"'38' '100' '' "    
+            var_len_dialog+="'ignore' '' '' 'manual' '' 'on' 'ffmpeg' '' '' "
+            tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## video filter slot")
+            for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                var_len_dialog+="'$(cat $0 | grep -v 'grep' | grep "video filter slot $cyclevar3" | sed "s/.*video filter slot $cyclevar3 //g" )' '' '' "
+            done
+            var_len_dialog+=' 2>'"$dialog_exitstatus"
+            eval "$var_len_dialog"
+            if [ "$(cat $dialog_exitstatus)" != "ignore" ]; then
+                if [ "$(cat $dialog_exitstatus)" != "manual" ] && [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                    $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "You may modify parameters from preset\n($(cat $dialog_exitstatus))" '10' '100' "$(cat $dialog_exitstatus)" 2>$dialog_exitstatus
+                elif [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                    $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify video filter settings" '10' '100' "" 2>$dialog_exitstatus
+                else
+                    $ffmpeg -filters -hide_banner | grep -v "=" | grep ' V->V ' | sed 's/[.T][.S][.C]//g' | sed 's/  / /g'| sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' >$dialog_exitstatus
+                    var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Append ffmpeg video filter" '"'38' '100' '' "    
+                    tmpvar8=$(wc -l $dialog_exitstatus | sed 's/ .*//g')
+                    for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                        tmpvar9="$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed 's/V->V.*//g' | sed 's/ //g')"
+                        var_len_dialog+="'$tmpvar9' '"
+                        var_len_dialog+=$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed "s/.*V->V //g")
+                        var_len_dialog+="' '' "
+                    done
+                    var_len_dialog+=' 2>'"$dialog_exitstatus"
+                    eval "$var_len_dialog"
+                    tmpvar8="$(cat $dialog_exitstatus)"
+                    tmpvar12=$(echo $($ffmpeg -hide_banner --help filter=$(cat $dialog_exitstatus)))
+                    $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify  parameters of video filter\nTo get full help of filter run from terminal: $ffmpeg --help filter=$(cat $dialog_exitstatus)\n\n$(echo -e ${tmpvar12:0:80}"\n"${tmpvar12:80:80}"\n"${tmpvar12:160:80}"\n"${tmpvar12:240:80}"\n"${tmpvar12:320:80}"\n"${tmpvar12:400:80}"\n"${tmpvar12:480:80}"\n"${tmpvar12:560:80}"\n"${tmpvar12:640:80}"\n"${tmpvar12:720:80}"\n"${tmpvar12:800:80}"\n"${tmpvar12:880:80}"\n"${tmpvar12:960:80}"\n"${tmpvar12:1040:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1200:80}"\n"${tmpvar12:1280:80})" '38' '100' "=" 2>$dialog_exitstatus
+                    if $(echo $tmpvar7 | grep -vq --regexp='-vf'); then
+                        echo "-vf $tmpvar8$(cat $dialog_exitstatus)">$dialog_exitstatus
+                    else
+                        echo ",$tmpvar8$(cat $dialog_exitstatus)">$dialog_exitstatus
+                    fi
+                fi
+                tmpvar6="$(cat $dialog_exitstatus)"
+                tmpvar7+="$(cat $dialog_exitstatus)"
+                tmpvar11+="$(cat $dialog_exitstatus)"
+                
+                ## save preset
+                if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != "" ]; then
+                    var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Save options as preset?\nExisted preset will be overwriten without questions.\n\n'"$tmpvar11"'" '"'38' '100' '' "    
+                    var_len_dialog+="'do not save' '' 'on' "
+                    tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## video filter slot")
+                    for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                        var_len_dialog+="'$cyclevar3' '$(cat $0 | grep -v 'grep' | grep "video filter slot $cyclevar3" | sed "s/.*video filter slot $cyclevar3 //g" )'  '' "
+                    done
+                    var_len_dialog+=' 2>'"$dialog_exitstatus"
+                    eval "$var_len_dialog"
+                    if $(cat $dialog_exitstatus | grep -q "[0-9]"); then
+                        sed -i "s/## video filter slot $(cat $dialog_exitstatus).*/## video filter slot $(cat $dialog_exitstatus) $tmpvar11/g" "$(echo $0 | sed 's|\.\/||g')"
+                    fi
+                fi
+            else
+                tmpvar10=0
+            fi
+            if [ $tmpvar10 != 0 ]; then
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --radiolist "Do you want to append another video filter " '13' '100' "" \
+                '0' 'no, exit from video filter selector' 'on' \
+                '1' 'yes, append another video filter' '' \
+                2>$dialog_exitstatus
+            fi
+            if [ "$(cat $dialog_exitstatus)" == "0" ]; then
+                tmpvar10=0
+                tmpvar7+=" "
+            fi
+        done
+    fi
+    
+    if $(echo $1 | grep -q 've'); then
+        var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Specify video encoder" '"'38' '100' '' "    
+        var_len_dialog+="'ignore' '' '' 'manual' '' 'on' 'ffmpeg' '' '' "
+        tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## video encoder slot")
+        for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+            var_len_dialog+="'$(cat $0 | grep -v 'grep' | grep "video encoder slot $cyclevar3" | sed "s/.*video encoder slot $cyclevar3 //g" )' '' '' "
+        done
+        var_len_dialog+=' 2>'"$dialog_exitstatus"
+        eval "$var_len_dialog"
+        if [ "$(cat $dialog_exitstatus)" != "ignore" ]; then
+            if [ "$(cat $dialog_exitstatus)" != "manual" ] && [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "You may modify parameters from preset\n($(cat $dialog_exitstatus))" '10' '100' "$(cat $dialog_exitstatus)" 2>$dialog_exitstatus
+            elif [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify video encoder settings" '10' '100' "-c:v " 2>$dialog_exitstatus
+            else
+                $ffmpeg -encoders -hide_banner | grep -v "=" | grep V[.F][.S][.X] | sed 's/ V[.F][.S]... //g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' >$dialog_exitstatus
+                var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Specify ffmpeg video encoder" '"'38' '100' '' "    
+                tmpvar8=$(wc -l $dialog_exitstatus | sed 's/ .*//g')
+                for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                    tmpvar9="$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed 's/ .*//g')"
+                    var_len_dialog+="'$tmpvar9' '"
+                    var_len_dialog+=$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed "s/$tmpvar9//g")
+                    var_len_dialog+="' '' "
+                done
+                var_len_dialog+=' 2>'"$dialog_exitstatus"
+                eval "$var_len_dialog"
+                tmpvar8="$(cat $dialog_exitstatus) "
+                tmpvar12=$(echo $($ffmpeg -hide_banner --help encoder=$(cat $dialog_exitstatus)))
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify bitrate or other video encoder parameters\nTo get some help of encoder run from terminal: $ffmpeg --help encoder=$(cat $dialog_exitstatus)\n\n$(echo -e ${tmpvar12:0:80}"\n"${tmpvar12:80:80}"\n"${tmpvar12:160:80}"\n"${tmpvar12:240:80}"\n"${tmpvar12:320:80}"\n"${tmpvar12:400:80}"\n"${tmpvar12:480:80}"\n"${tmpvar12:560:80}"\n"${tmpvar12:640:80}"\n"${tmpvar12:720:80}"\n"${tmpvar12:800:80}"\n"${tmpvar12:880:80}"\n"${tmpvar12:960:80}"\n"${tmpvar12:1040:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1200:80}"\n"${tmpvar12:1280:80})" '38' '100' "-b:v 2M" 2>$dialog_exitstatus
+                echo -c:v $tmpvar8 $(cat $dialog_exitstatus)>$dialog_exitstatus
+            fi
+            tmpvar6="$(cat $dialog_exitstatus)"
+            tmpvar7+="$(cat $dialog_exitstatus) "
+            
+            ## save preset
+            if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != " " ]; then
+                var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Save options as preset?\nExisted preset will be overwriten without questions.\n\n'"$tmpvar6"'" '"'38' '100' '' "    
+                var_len_dialog+="'do not save' '' 'on' "
+                tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## video encoder slot")
+                for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                    var_len_dialog+="'$cyclevar3' '$(cat $0 | grep -v 'grep' | grep "video encoder slot $cyclevar3" | sed "s/.*video encoder slot $cyclevar3 //g" )'  '' "
+                done
+                var_len_dialog+=' 2>'"$dialog_exitstatus"
+                eval "$var_len_dialog"
+                if $(cat $dialog_exitstatus | grep -q "[0-9]"); then
+                    sed -i "s/## video encoder slot $(cat $dialog_exitstatus).*/## video encoder slot $(cat $dialog_exitstatus) $tmpvar6/g" "$(echo $0 | sed 's|\.\/||g')"
+                fi
+            fi
+        fi
+    fi
+    
+    if $(echo $1 | grep -q 'af'); then
+        tmpvar10=1
+        tmpvar11=''
+        while [ "$tmpvar10" -gt 0 ]; do
+            var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Append audio filter" '"'38' '100' '' "    
+            var_len_dialog+="'ignore' '' '' 'manual' '' 'on' 'ffmpeg' '' '' "
+            tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## audio filter slot")
+            for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                var_len_dialog+="'$(cat $0 | grep -v 'grep' | grep "audio filter slot $cyclevar3" | sed "s/.*audio filter slot $cyclevar3 //g" )' '' '' "
+            done
+            var_len_dialog+=' 2>'"$dialog_exitstatus"
+            eval "$var_len_dialog"
+            if [ "$(cat $dialog_exitstatus)" != "ignore" ]; then
+                if [ "$(cat $dialog_exitstatus)" != "manual" ] && [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                    $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "You may modify parameters from preset\n($(cat $dialog_exitstatus))" '10' '100' "$(cat $dialog_exitstatus)" 2>$dialog_exitstatus
+                elif [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                    $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify audio filter settings" '10' '100' "" 2>$dialog_exitstatus
+                else
+                    $ffmpeg -filters -hide_banner | grep -v "=" | grep ' A->A ' | sed 's/[.T][.S][.C]//g' | sed 's/  / /g'| sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' >$dialog_exitstatus
+                    var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Append ffmpeg audio filter" '"'38' '100' '' "    
+                    tmpvar8=$(wc -l $dialog_exitstatus | sed 's/ .*//g')
+                    for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                        tmpvar9="$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed 's/A->A.*//g' | sed 's/ //g')"
+                        var_len_dialog+="'$tmpvar9' '"
+                        var_len_dialog+=$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed "s/.*A->A //g")
+                        var_len_dialog+="' '' "
+                    done
+                    var_len_dialog+=' 2>'"$dialog_exitstatus"
+                    eval "$var_len_dialog"
+                    tmpvar8="$(cat $dialog_exitstatus)"
+                    tmpvar12=$(echo $($ffmpeg -hide_banner --help filter=$(cat $dialog_exitstatus)))
+                    $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify  parameters of audio filter\nTo get full help of filter run from terminal: $ffmpeg --help filter=$(cat $dialog_exitstatus)\n\n$(echo -e ${tmpvar12:0:80}"\n"${tmpvar12:80:80}"\n"${tmpvar12:160:80}"\n"${tmpvar12:240:80}"\n"${tmpvar12:320:80}"\n"${tmpvar12:400:80}"\n"${tmpvar12:480:80}"\n"${tmpvar12:560:80}"\n"${tmpvar12:640:80}"\n"${tmpvar12:720:80}"\n"${tmpvar12:800:80}"\n"${tmpvar12:880:80}"\n"${tmpvar12:960:80}"\n"${tmpvar12:1040:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1200:80}"\n"${tmpvar12:1280:80})" '38' '100' "=" 2>$dialog_exitstatus
+                    if $(echo $tmpvar7 | grep -vq --regexp='-af'); then
+                        echo "-af $tmpvar8$(cat $dialog_exitstatus)">$dialog_exitstatus
+                    else
+                        echo ",$tmpvar8$(cat $dialog_exitstatus)">$dialog_exitstatus
+                    fi
+                fi
+                tmpvar6="$(cat $dialog_exitstatus)"
+                tmpvar7+="$(cat $dialog_exitstatus)"
+                tmpvar11+="$(cat $dialog_exitstatus)"
+                
+                ## save preset
+                if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != "" ]; then
+                    var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Save options as preset?\nExisted preset will be overwriten without questions.\n\n'"$tmpvar11"'" '"'38' '100' '' "    
+                    var_len_dialog+="'do not save' '' 'on' "
+                    tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## audio filter slot")
+                    for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                        var_len_dialog+="'$cyclevar3' '$(cat $0 | grep -v 'grep' | grep "audio filter slot $cyclevar3" | sed "s/.*audio filter slot $cyclevar3 //g" )'  '' "
+                    done
+                    var_len_dialog+=' 2>'"$dialog_exitstatus"
+                    eval "$var_len_dialog"
+                    if $(cat $dialog_exitstatus | grep -q "[0-9]"); then
+                        sed -i "s/## audio filter slot $(cat $dialog_exitstatus).*/## audio filter slot $(cat $dialog_exitstatus) $tmpvar11/g" "$(echo $0 | sed 's|\.\/||g')"
+                    fi
+                fi
+            else
+                tmpvar10=0
+            fi
+            if [ $tmpvar10 != 0 ]; then
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --radiolist "Do you want to append another audio filter " '13' '100' "" \
+                '0' 'no, exit from audio filter selector' 'on' \
+                '1' 'yes, append another audio filter' '' \
+                2>$dialog_exitstatus
+            fi
+            if [ "$(cat $dialog_exitstatus)" == "0" ]; then
+                tmpvar10=0
+                tmpvar7+=" "
+            fi
+        done
+    fi
+    
+    if $(echo $1 | grep -q 'ae'); then
+        var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Specify audio encoder" '"'38' '100' '' "    
+        var_len_dialog+="'ignore' '' '' 'manual' '' 'on' 'ffmpeg' '' '' "
+        tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## audio encoder slot")
+        for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+            var_len_dialog+="'$(cat $0 | grep -v 'grep' | grep "audio encoder slot $cyclevar3" | sed "s/.*audio encoder slot $cyclevar3 //g" )' '' '' "
+        done
+        var_len_dialog+=' 2>'"$dialog_exitstatus"
+        eval "$var_len_dialog"
+        if [ "$(cat $dialog_exitstatus)" != "ignore" ]; then
+            if [ "$(cat $dialog_exitstatus)" != "manual" ] && [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "You may modify parameters from preset\n($(cat $dialog_exitstatus))" '10' '100' "$(cat $dialog_exitstatus)" 2>$dialog_exitstatus
+            elif [ "$(cat $dialog_exitstatus)" != "ffmpeg" ]; then
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify audio encoder settings" '10' '100' "-c:v " 2>$dialog_exitstatus
+            else
+                $ffmpeg -encoders -hide_banner | grep -v "=" |  grep -v A[.F][.S]X | grep A[.F][.S]. | sed 's/ A[.F][.S]... //g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' | sed 's/  / /g' >$dialog_exitstatus
+                var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Specify ffmpeg audio encoder" '"'38' '100' '' "    
+                tmpvar8=$(wc -l $dialog_exitstatus | sed 's/ .*//g')
+                for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                    tmpvar9="$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed 's/ .*//g')"
+                    var_len_dialog+="'$tmpvar9' '"
+                    var_len_dialog+=$(cat $dialog_exitstatus | head -n +$cyclevar3 | tail -n 1 | sed "s/$tmpvar9//g")
+                    var_len_dialog+="' '' "
+                done
+                var_len_dialog+=' 2>'"$dialog_exitstatus"
+                eval "$var_len_dialog"
+                tmpvar8="$(cat $dialog_exitstatus) "
+                tmpvar12=$(echo $($ffmpeg -hide_banner --help encoder=$(cat $dialog_exitstatus)))
+                $dialog --title "Simple pseudo gui of $0 encoder and filters selector" --no-cancel --inputbox "Specify bitrate or other audio encoder parameters\nTo get some help of encoder run from terminal: $ffmpeg --help encoder=$(cat $dialog_exitstatus)\n\n$(echo -e ${tmpvar12:0:80}"\n"${tmpvar12:80:80}"\n"${tmpvar12:160:80}"\n"${tmpvar12:240:80}"\n"${tmpvar12:320:80}"\n"${tmpvar12:400:80}"\n"${tmpvar12:480:80}"\n"${tmpvar12:560:80}"\n"${tmpvar12:640:80}"\n"${tmpvar12:720:80}"\n"${tmpvar12:800:80}"\n"${tmpvar12:880:80}"\n"${tmpvar12:960:80}"\n"${tmpvar12:1040:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1200:80}"\n"${tmpvar12:1280:80})" '38' '100' "-b:a 320k" 2>$dialog_exitstatus
+                echo -c:a $tmpvar8 $(cat $dialog_exitstatus)>$dialog_exitstatus
+            fi
+            tmpvar6="$(cat $dialog_exitstatus)"
+            tmpvar7+="$(cat $dialog_exitstatus) "
+            
+            ## save preset
+            if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != " " ]; then
+                var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' encoder and filters selector" --no-cancel --radiolist "Save options as preset?\nExisted preset will be overwriten without questions.\n\n'"$tmpvar6"'" '"'38' '100' '' "    
+                var_len_dialog+="'do not save' '' 'on' "
+                tmpvar8=$(cat msslib | grep -v 'grep' | grep -v 'sed' | grep -c "## audio encoder slot")
+                for ((cyclevar3=1;cyclevar3<=$tmpvar8;cyclevar3+=1)); do
+                    var_len_dialog+="'$cyclevar3' '$(cat $0 | grep -v 'grep' | grep "audio encoder slot $cyclevar3" | sed "s/.*audio encoder slot $cyclevar3 //g" )'  '' "
+                done
+                var_len_dialog+=' 2>'"$dialog_exitstatus"
+                eval "$var_len_dialog"
+                if $(cat $dialog_exitstatus | grep -q "[0-9]"); then
+                    sed -i "s/## audio encoder slot $(cat $dialog_exitstatus).*/## audio encoder slot $(cat $dialog_exitstatus) $tmpvar6/g" "$(echo $0 | sed 's|\.\/||g')"
+                fi
+            fi
+        fi
+    fi
+    
+    #echo $tmpvar7
+    run_command+="$(echo $tmpvar7)"
+    }
+
+tmpvar5=$(<$dialog_exitstatus)
+if [ "$(echo $tmpvar5)" == "csvc" ]; then
+    $dialog --title "Simple pseudo gui of $0 csvc" --no-cancel --msgbox "Change the Speed of Video Cuts during re-encoding.\n\nReq. bash-like shell, grep, sed, head, tail, wc, find, ffmpeg\nMultistreams are not supported, i.e. single video + single audio\n Default audio encoder settings -b:a 320k -c:a aac\nDefault video encoder settings -c:v libx264 -crf 20\nDefault processed files mkv and mp4" '15' '100'
+    run_command='csvc '
+    $dialog --title "Simple pseudo gui of $0 csvc" --no-cancel --inputbox "Specify single speed factor for whole file\nor a couple speed factors for each fragment of video\n\nlike 1.7 or 1.7 0.9 2.5\nVery high speed or speed more than for example 200 may lead to fail." "15" "100" "1.0" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 csvc" --no-cancel --inputbox "Specify tamestamp of fragments borders\nor nothing when single speed for whole file\n\nFor examle 00:00:10.234 00:00:20.927" "15" "100" "" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 csvc" --no-cancel --inputbox "Specify filename or mask like *.avi\n\nOtherwise mkv and mp4 will be processed" "15" "100" "" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' '"
+    efs ve
+    run_command+="' '"
+    efs vf
+    run_command+="' '"
+    tmpvar13=$(echo $run_command | sed 's/-vf /,/g')
+    run_command=$tmpvar13
+    efs ae
+    run_command+="' "
+    $dialog --title "Simple pseudo gui of $0 csvc" --no-cancel --radiolist "Do not glue fragments and \nprocess only first file in case of entered mask?" "13" "100" "" ' ' 'no, glue fragments and process all files' 'on' 'cng' 'yes' '' 2>$dialog_exitstatus
+    run_command+="$(cat $dialog_exitstatus)"
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "pvp" ]; then
+    $dialog --title "Simple pseudo gui of $0 pvp" --no-cancel --msgbox "Parallel video processing - this script divides the video file\n to almost equally parts and processing them simultaneously, then glue and mux.\nThis can be useful on a multi-core system when performing single-threaded filters.\n\nRequires bash-like shell, ffmpeg, mkvmerge, mktemp and so on" '15' '100'
+    run_command='pvp '
+    var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' pvp" --no-cancel --radiolist "Specify media file to process" '"'38' '100' '' "    
+    tmpfile33=$(mktemp XXXXXXXX.tmp)
+    ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' >$tmpfile33
+    for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile33 | sed 's/ .*//g');cyclevar3+=1)); do
+        var_len_dialog+="'$(cat $tmpfile33 | head -n +$cyclevar3 | tail -n 1)' '' '' "
+    done
+    var_len_dialog+=' 2>'"$dialog_exitstatus"
+    eval "$var_len_dialog"
+    run_command+="'$(cat $dialog_exitstatus)' "
+    rm -f $tmpfile33
+    $dialog --title "Simple pseudo gui of $0 pvp" --no-cancel --inputbox "Specify threads count" '10' '100' "$(($(grep 'model name' /proc/cpuinfo --count)/2+1))" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' '"
+    efs aeveafvf
+    #run_command+="'$(efs aeveafvf | tail -n 1)' "
+    run_command+="'"
+    clear
+    #echo "$run_command"
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "nvenc2mp4" ]; then
+    $dialog --title "Simple pseudo gui of $0 nvenc2mp4" --no-cancel --msgbox "Fast transcoding (mkv webm flv ts avi) to compatible format with an old TV\ni.e. *.mp4 {H264 =<30fps =<1920x1080 + aac normalized drc}\n\nReq: bash, hash, grep, head, tail, wc, ffmpeg with nvenc support\nnvidia GT 630 or better (except 1030) and installed proprietary Nvidia drivers" '14' '100'
+    run_command='nvenc2mp4 '
+    $dialog --title "Simple pseudo gui of $0 nvenc2mp4" --no-cancel --radiolist "Audio processing" '14' '100' "" \
+    ' ' 'compess and normalize by default' 'on' \
+    'no' 'do not use dynamic range volume compression' '' \
+    'novp' 'do not volume process, just copy' '' \
+    2>$dialog_exitstatus
+    if [ "$(cat $dialog_exitstatus)" == " " ]; then
+        run_command+="'' '' "
+    else
+        run_command+="'' '$(cat $dialog_exitstatus)' "
+    fi
+    $dialog --title "Simple pseudo gui of $0 nvenc2mp4" --no-cancel --inputbox "Specify video bitrate 800k, 50M" '10' '100' "2M" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 nvenc2mp4" --no-cancel --inputbox "Specify extension for processed file(s)" '10' '100' "mkv webm flv ts avi" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "mpeh" ]; then
+    $dialog --title "Simple pseudo gui of $0 mpeh" --no-cancel --msgbox "It takes x264_2pass.log file and tries to find a\n'high motion' zones on it with purpose to increase bitrate of them,\nby cost of slightly decreasing bitrate of other frames.\n\nZones are bordered by specified persent of selected frame types \nwith max texture sizes (by default)\nAt the end will be created file and gived command \nof how to include it to x264 final pass encoding.\n\nReq.: bash, grep, sed, cat, sort, awk, echo, x264 1st-pass log file" '20' '100'
+    run_command="mpeh '' "
+    $dialog --title "Simple pseudo gui of $0 mpeh" --no-cancel --inputbox "Specify x264 multipass encoding log file" '10' '100' "x264_2pass.log" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 mpeh" --no-cancel --inputbox "Specify border frames persent of zones frames (15 or less)" '10' '100' "5" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 mpeh" --no-cancel --inputbox "Specify bitrate multiplicator for zones" '10' '100' "1.5" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 mpeh" --no-cancel --radiolist "Select frames type for analysis" '20' '100' "" \
+    'I' ' key frame' '' \
+    'P' '' 'on' \
+    'B' '' '' \
+    'b' '' '' \
+    'any' ' use any frame type' '' \
+    2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' '' "
+     $dialog --title "Simple pseudo gui of $0 mpeh" --no-cancel --radiolist "Select frames parameter for analysis" '12' '100' "" \
+    'tex' ' use frame textures' 'on' \
+    'mv' ' use frame motion vectors' '' \
+    2>$dialog_exitstatus
+    $dialog --title "Simple pseudo gui of $0 mpeh" --no-cancel --inputbox "Specify interval theshold" '10' '100' "50" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "fdrch+" ]; then
+    $dialog --title "Simple pseudo gui of $0 fdrch+" --no-cancel --msgbox "Force Dynamic Range Compression to center cHannel+, other channels\n\nnormalized by default. Multichannels and multistreams are supported.\n" '15' '100'
+    run_command="fdrch+ '' "
+    $dialog --title "Simple pseudo gui of $0 fdrch+" --no-cancel --inputbox "Specify audio encoder like mp3 or detected,mp3,ac3 \n\nor leave empty for use same encoders as in source" '15' '100' '' 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' " 
+    $dialog --title "Simple pseudo gui of $0 fdrch+" --no-cancel --inputbox "Specify audio bitrate like 320 or ,1536,512 \n\nor leave empty for use same bitrates as in source" '15' '100' '' 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' " 
+    $dialog --title "Simple pseudo gui of $0 fdrch+" --no-cancel --radiolist "Specify sheme of multichannel audio processing" '15' '100' '' \
+    "''" 'compress center channel, other normalize' 'on' \
+    'i' 'same, but normalize channels individually' '' \
+    'ic' 'normalize channels individually and light compress to all except LFE' '' \
+    2>$dialog_exitstatus
+    run_command+="$(cat $dialog_exitstatus) "
+    $dialog --title "Simple pseudo gui of $0 fdrch+" --no-cancel --inputbox "Specify extension(s) for processed files\n\nmkv by default" '15' '100' '' 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' " 
+    $dialog --title "Simple pseudo gui of $0 fdrch+" --no-cancel  --checklist "Specify other parametors" '15' '100' '' \
+    'f' 'fdrc-mode i.e. force dynamic range high compression to stereo/mono' '' \
+    's' 'silent progressbar' '' \
+    2>$dialog_exitstatus
+    if $(cat $dialog_exitstatus | grep -q f); then
+        run_command+="f "
+    else
+        run_command+="'' "
+    fi
+    
+    if $(cat $dialog_exitstatus | grep -q s); then
+        run_command+="s "
+    else
+        run_command+="'' "
+    fi
+    $dialog --title "Simple pseudo gui of $0 fdrch+" --no-cancel --msgbox "You may override compessor settings and/or switch from compressor to another audio filter(s)\n\ndefault :\n acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB\nlight :\n acompressor=link=maximum:ratio=2:attack=0.2:release=2000:detection=peak:threshold=-20dB" '15' '110'
+    run_command+="'"
+    efs af
+    run_command+="'"
+    tmpvar13=$(echo $run_command | sed 's/-af //g')
+    run_command=$tmpvar13
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "nit" ]; then
+    $dialog --title "Simple pseudo gui of $0 nit" --no-cancel --msgbox "Normalize the volume of audio files\n\nRequired: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find\n\nMultiplexing of covers currently supported for mp3 and flac only.\nOtherwise covers will be extracted" '15' '100'
+    run_command='nit '
+    $dialog --title "Simple pseudo gui of $0 nit" --no-cancel --inputbox "Specify audio files extension, like mp3, flac, wav, ogg" '10' '100' "mp3" 2>$dialog_exitstatus
+    run_command+="$(cat $dialog_exitstatus) -r "
+    $dialog --title "Simple pseudo gui of $0 nit" --no-cancel --radiolist "Do you want to force output frequency?" '15' '100' "" \
+    '48000hz' '' '' \
+    '44100hz' '' '' \
+    ' ' 'do not resample' 'on' \
+    2>$dialog_exitstatus
+    if [ "$(cat $dialog_exitstatus)" != " " ]; then
+        run_command+="$(cat $dialog_exitstatus) "
+    fi
+    $dialog --title "Simple pseudo gui of $0 nit" --no-cancel --inputbox "Specify audio bitrate like 320, or leave empty for auto" '10' '100' "" 2>$dialog_exitstatus
+    if [ "$(cat $dialog_exitstatus)" != "" ]; then
+        run_command+="$(cat $dialog_exitstatus)kbps "
+    fi
+    $dialog --title "Simple pseudo gui of $0 nit" --no-cancel --radiolist "Do you want to force output container?" '23' '100' "" \
+    'ogg' '' '' \
+    'mp3' '' '' \
+    'wav' '' '' \
+    'flac' '' '' \
+    'webm' '' '' \
+    'm4a' '' '' \
+    ' ' 'use same' 'on' \
+    2>$dialog_exitstatus
+    if [ "$(cat $dialog_exitstatus)" != " " ]; then
+        run_command+="f-$(cat $dialog_exitstatus) "
+    fi
+    $dialog --title "Simple pseudo gui of $0 nit" --no-cancel --inputbox "Specify prefix of normalized files" '10' '100' "nrm_" 2>$dialog_exitstatus
+    run_command+="pref:$(cat $dialog_exitstatus)"
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "cuesplit" ]; then
+    clear
+    cuesplit
+elif [ "$(echo $tmpvar5)" == "tempo" ]; then
+    $dialog --title "Simple pseudo gui of $0 tempo" --no-cancel --msgbox "Normalizing, converting to ogg and change the speed and pitch of music from 0.5x to 2.0x\n\nReq.: bash, grep, sed, ffmpeg" '10' '100'
+    run_command='tempo '
+    $dialog --title "Simple pseudo gui of $0 tempo" --no-cancel --inputbox "Enter mask of audio files, like *.mp3 or *.flac..." '10' '100' "*.mp3" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 tempo" --no-cancel --inputbox "Enter the speed factor from 0.5 to 2.0" '10' '100' "1.5" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "lca" ]; then
+    $dialog --title "Simple pseudo gui of $0 lca" --no-cancel --msgbox "This script searches local jpg and png images named same as audio files\nor like 'folder' 'cover' and includes it to corresponding media.\n\nRequired: bash-like shell env., ffmpeg, grep, sed, wc, tail, head, find" '10' '100'
+    run_command='lca '
+    $dialog --title "Simple pseudo gui of $0 lca" --no-cancel --inputbox "Specify audio files extension, that you want to process.\n\nMultiplexing of covers currently supported for mp3 and flac, \notherwise, media will be muxed to mka files." '15' '100' "mp3" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' -r "
+    $dialog --title "Simple pseudo gui of $0 lca" --no-cancel --inputbox "Specify the prefix of new media files" '10' '100' "artd_" 2>$dialog_exitstatus
+    run_command+="'pref:$(cat $dialog_exitstatus)' "
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "r2f" ]; then
+    run_command="r2f "
+    var_len_dialog="$dialog --title "'"Simple pseudo gui of '$0' r2f" --no-cancel --radiolist "This function lets you remux files from one media container to another.\nIn most cases it require ffmpeg, mktemp, ls, cat, sed, head, tail, wc\n\nThere are files with next extensions. Specify extension of source media files" '"'37' '100' '' "
+    for cyclevar2 in $(echo $(ls --file-type *.* -l | sed 's/.*\.//g' | sed "s/'//g" | sort -u | sed 's/tmp//g')); do
+        var_len_dialog+="'$cyclevar2' '' '' "
+    done
+    var_len_dialog+="'manual' '' '' "'2>'"$dialog_exitstatus"
+    eval "$var_len_dialog"
+    if $(cat $dialog_exitstatus | grep -q manual) ; then
+        $dialog --title "Simple pseudo gui of $0 r2f" --no-cancel --inputbox "Enter extension of source media container" '10' '100' "mp4" 2>$dialog_exitstatus
+    fi
+    run_command+="'$(cat $dialog_exitstatus)' "
+    $dialog --title "Simple pseudo gui of $0 r2f" --no-cancel --inputbox "Enter extension of desired media container" '10' '100' "mkv" 2>$dialog_exitstatus
+    run_command+="'$(cat $dialog_exitstatus)' "
+    clear
+    eval "$run_command"
+elif [ "$(echo $tmpvar5)" == "ffmpeg" ]; then
+    tmpvar12=$(echo $($ffmpeg -version) | sed 's/ffmpeg version //g')
+    $dialog --title "Simple pseudo gui for system's ffmpeg" --no-cancel --radiolist "Full power of ffmpeg available from terminal only.  Local system's ffmpeg ver. is:\n$(echo -e ${tmpvar12:0:80}"\n"${tmpvar12:80:80}"\n"${tmpvar12:160:80}"\n"${tmpvar12:240:80}"\n"${tmpvar12:320:80}"\n"${tmpvar12:400:80}"\n"${tmpvar12:480:80}"\n"${tmpvar12:560:80}"\n"${tmpvar12:640:80}"\n"${tmpvar12:720:80}"\n"${tmpvar12:800:80}"\n"${tmpvar12:880:80}"\n"${tmpvar12:960:80}"\n"${tmpvar12:1040:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1200:80}"\n"${tmpvar12:1280:80})" '38' '100' '' 'simple use' '' 'on' 'multistreams use' '' '' 2>$dialog_exitstatus
+    run_command="$ffmpeg "
+    
+    if $(cat $dialog_exitstatus | grep -q 'simple use'); then
+        var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --no-cancel --radiolist "Select media file to process" '"'38' '100' '' "    
+        tmpfile34=$(mktemp XXXXXXXX.tmp)
+        ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' >$tmpfile34
+        for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
+            var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' '' '' "
+        done
+        var_len_dialog+=' 2>'"$dialog_exitstatus"
+        eval "$var_len_dialog"
+        run_command+=" -i '$(cat $dialog_exitstatus)' "
+        tmpfile35=$(mktemp XXXXXXXX.tmp)
+        $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
+        if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
+            efs vf
+            run_command+=" "
+            efs ve
+            run_command+=" "
+        fi
+        if [ "$(vfpe "$tmpfile35" 'audio_streams_count')" -gt 0 ]; then
+            efs af
+            run_command+=" "
+            efs ae
+            run_command+=" "
+        fi
+        
+        rm -f $tmpfile34 $tmpfile35
+        
+    elif $(cat $dialog_exitstatus | grep -q 'multistreams use'); then
+        tmpvar14=1
+        media_counts=0
+        available_streams=''
+        while [ "$tmpvar14" -gt 0 ]; do
+            var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --no-cancel --radiolist "Append media file to process" '"'38' '100' '' 'done' ' of files append' 'on' "    
+            tmpfile34=$(mktemp XXXXXXXX.tmp)
+            ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' >$tmpfile34
+            for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
+                var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' '' '' "
+            done
+            var_len_dialog+=' 2>'"$dialog_exitstatus"
+            eval "$var_len_dialog"
+            if [ "$(cat $dialog_exitstatus)" != "done" ]; then
+                run_command+=" -i '$(cat $dialog_exitstatus)' "
+                media_counts=$(($media_counts+1))
+                tmpfile35=$(mktemp XXXXXXXX.tmp)
+                $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
+                
+                for ((cyclevar4=0;cyclevar4<=$($0 vfpe "$tmpfile35" 'video_streams_count');cyclevar4+=1)); do
+                    available_streams+="$media_counts"v$cyclevar4' '
+                done
+                for ((cyclevar4=0;cyclevar4<=$($0 vfpe "$tmpfile35" 'audio_streams_count');cyclevar4+=1)); do
+                    available_streams+="$media_counts"a$cyclevar4' '
+                done
+                for ((cyclevar4=0;cyclevar4<=$($0 vfpe "$tmpfile35" 'subtitle_streams_count');cyclevar4+=1)); do
+                    available_streams+="$media_counts"s$cyclevar4' '
+                done
+                rm -f $tmpfile35
+            else
+                tmpvar14=0
+            fi
+            rm -f $tmpfile34
+        done
+        
+        tmpvar15=''
+        tmpvar17=0
+        tmpvar18=0
+        while [ "$tmpvar15" != "done" ]; do
+            var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --no-cancel --radiolist "Streams selector\nSelect next stream for append to output file" '"'38' '100' '' " 
+            for cyclevar3 in $(echo $available_streams); do
+                if $(echo $cyclevar3 | grep -q 'v[1-9]'); then
+                    var_len_dialog+="'$cyclevar3' ' $(echo $cyclevar3 | sed 's/v/-file Video stream: /g')' '' "
+                elif $(echo $cyclevar3 | grep -q 'a[1-9]'); then
+                    var_len_dialog+="'$cyclevar3' ' $(echo $cyclevar3 | sed 's/a/-file Audio stream: /g')' '' "
+                elif $(echo $cyclevar3 | grep -q 's[1-9]'); then
+                    var_len_dialog+="'$cyclevar3' ' $(echo $cyclevar3 | sed 's/s/-file Subtitle stream: /g')' '' "
+                fi
+            done
+            var_len_dialog+="'done' ' of streams append' '' "
+            var_len_dialog+=' 2>'"$dialog_exitstatus"
+            eval "$var_len_dialog"
+            tmpvar15=$(cat $dialog_exitstatus)
+            tmpvar16=$(echo $available_streams | sed "s/$(echo $tmpvar15)//g")
+            available_streams=$tmpvar16
+            if $(echo $tmpvar15 | grep -q 'v'); then
+                run_command+="-map $(($(echo $tmpvar15 | sed 's/v.*//g' )-1)):v:$(($(echo $tmpvar15 | sed 's/.*v//g') -1)) " 
+                tmpvar16=$run_command
+                run_command=''
+                efs vf
+                tmpvar16+=$(echo $run_command | sed "s/-vf/-filter:v:$tmpvar17/g")' '
+                run_command=''
+                efs ve
+                tmpvar16+=$(echo $run_command | sed "s/-c:v/-codec:v:$tmpvar17/g" | sed "s/-b:v/-b:v:$tmpvar18/g")' '
+                run_command=$tmpvar16
+                tmpvar17=$(($tmpvar17+1))
+            elif $(echo $tmpvar15 | grep -q 'a'); then
+                run_command+="-map $(($(echo $tmpvar15 | sed 's/a.*//g' )-1)):a:$(($(echo $tmpvar15 | sed 's/.*a//g') -1)) "
+                tmpvar16=$run_command
+                run_command=''
+                efs af
+                tmpvar16+=$(echo $run_command | sed "s/-af/-filter:a:$tmpvar18/g")' '
+                run_command=''
+                efs ae
+                tmpvar16+=$(echo $run_command | sed "s/-c:a/-codec:a:$tmpvar18/g" | sed "s/-b:a/-b:a:$tmpvar18/g")' '
+                run_command=$tmpvar16
+                tmpvar18=$(($tmpvar18+1))
+            elif $(echo $tmpvar15 | grep -q 's'); then
+                run_command+="-map $(($(echo $tmpvar15 | sed 's/s.*//g' )-1)):s:$(($(echo $tmpvar15 | sed 's/.*s//g') -1)) "
+            fi
+        done
+    fi
+        
+    if $(echo $run_command | grep -vq --regexp="-i ''") && $(echo $run_command | grep -q --regexp="-i "); then
+        $dialog --title "Simple pseudo gui for system's ffmpeg" --no-cancel --inputbox "Specify output media file" '7' '100' "test.mkv" 2>$dialog_exitstatus
+        run_command+="'$(cat $dialog_exitstatus)' "
+        eval "$run_command"
+    fi
+    #echo $run_command
+fi
+
+rm -f $dialog_exitstatus
+
+}
+
+## end of pseudo-gui
+############################
+## execute required function
 
 if $(echo $1 | grep -q --regexp="ffmpeg="); then
     ffmpeg="$(echo "$1" | sed 's/ffmpeg=//g')"
@@ -1656,3 +2277,47 @@ for ((c_y=$st_in; c_y<=$inpar; c_y+=1)); do
   exefunc+='"${'$c_y'}" '
 done
 eval $exefunc
+
+############################
+## pseudo gui templates
+############################
+##
+## video encoder slot 1 -c:v libx264 -crf 20
+## video encoder slot 2 -c:v h264_nvenc -b:v 2M
+## video encoder slot 3 -c:v libx265 -crf 22 -x265-params psy-rd=0.00
+## video encoder slot 4 -c:v copy 
+## video encoder slot 5 
+## video encoder slot 6 
+## video encoder slot 7 
+## video encoder slot 8 
+##
+## video filter slot 1 -vf deblock=block=4,fftdnoiz=sigma=13,eq=contrast=1.05,cas=strength=0.2
+## video filter slot 2 -vf  deblock,atadenoise=s=21,fftdnoiz=sigma=13,unsharp=luma_amount=-0.15:la=-0.15:chroma_amount=5:ca=5,eq=contrast=1.13
+## video filter slot 3 
+## video filter slot 4 
+## video filter slot 5 
+## video filter slot 6 
+## video filter slot 7 
+## video filter slot 8 
+##
+## audio encoder slot 1 -c:a copy 
+## audio encoder slot 2 -c:a aac -b:a 320k
+## audio encoder slot 3 -c:a libvorbis -aq 5
+## audio encoder slot 4 
+## audio encoder slot 5 
+## audio encoder slot 6 
+## audio encoder slot 7 
+## audio encoder slot 8 
+##
+## audio filter slot 1 -af  acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB
+## audio filter slot 2 
+## audio filter slot 3 
+## audio filter slot 4 
+## audio filter slot 5 
+## audio filter slot 6 
+## audio filter slot 7 
+## audio filter slot 8 
+##
+############################
+## end
+############################
