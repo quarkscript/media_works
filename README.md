@@ -13,6 +13,10 @@ It uses **ffmpeg, bash** and some simple commands to normalize audio volume, com
   - **cuesplit** - split one audio into separate flac files corresponding to the CUE
   - **tempo** - acceleration and deacceleration the speed of audio files
   - **lca** - add a local cover picture to mp3 or flac or mka -files
+ - simple pseudo-gui (requires Xdialog): **./msslib spg**
+ 
+ ![](some_examples/msslib_spg.jpg)
+ 
 >**for help run ./msslib -h**
 
 There are [**old versions of scripts**](archive) 
