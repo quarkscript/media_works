@@ -2149,7 +2149,7 @@ elif (echo $tmpvar5 | grep -q "ffmpeg" ); then
         check_status
         run_command+=" -i '$(cat $dialog_exitstatus)' "
         tmpfile35=$(mktemp XXXXXXXX.tmp)
-        $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 1>$tmpfile35
+        $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
         if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
             efs vf
             run_command+=" "
@@ -2182,7 +2182,7 @@ elif (echo $tmpvar5 | grep -q "ffmpeg" ); then
                 run_command+=" -i '$(cat $dialog_exitstatus)' "
                 media_counts=$(($media_counts+1))
                 tmpfile35=$(mktemp XXXXXXXX.tmp)
-                $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 1>$tmpfile35
+                $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
                 
                 for ((cyclevar4=0;cyclevar4<=$($0 vfpe "$tmpfile35" 'video_streams_count');cyclevar4+=1)); do
                     available_streams+="$media_counts"v$cyclevar4' '
@@ -2215,7 +2215,7 @@ elif (echo $tmpvar5 | grep -q "ffmpeg" ); then
                     var_len_dialog+="'$cyclevar3: $(echo $cyclevar3 | sed 's/s/-file Subtitle stream: /g')' "
                 fi
             done
-            var_len_dialog+="'done' ' of streams append' '' "
+            var_len_dialog+="'done' "
             var_len_dialog+=' | sed "s/\:.*//g">'"$dialog_exitstatus"
             eval "$var_len_dialog"
             tmpvar15=$(cat $dialog_exitstatus)
@@ -2273,6 +2273,7 @@ if $($1 --version 2>&1 | grep -vq 'command not found') && [ ! -z "$1" ]; then
     dialog="$1"
 elif $(kdialog --version 2>&1 | grep -vq 'command not found') && [ -z "$1" ]; then
     spg_kdialog
+    exit 0
 elif $(Xdialog --version 2>&1 | grep -vq 'command not found') && [ -z "$1" ]; then
     dialog=Xdialog
 elif $(dialog --version 2>&1 | grep -vq 'command not found') && [ -z "$1" ]; then
