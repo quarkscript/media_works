@@ -69,7 +69,7 @@ if [ -z $1 ] || [ "$1" == "-h" ] || [ "$1" == "-help" ] || [ "$1" == "help" ]||[
 ## stream_lang, video_stream_starts, audio_stream_starts, video_stream_id,
 ## video_stream_codec, video_stream_width, video_stream_heigh, subtitle_streams_count,
 ## video_stream_fps, video_stream_bitrate, audio_stream_id, audio_stream_codec,
-## audio_stream_freq, audio_stream_bitrate, audio_stream_channels, 
+## audio_stream_freq, audio_stream_bitrate, audio_stream_channels, audio_stream_sample_fmt,
 ## overall_duration, overall_bitrate, metadata, media_file_size.
 
 Author Andrew S. License GPL [github,gitlab].com/quarkscript/
@@ -130,6 +130,8 @@ elif [ "$2" == "audio_stream_bitrate" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Audio -m 1 | sed 's| kb\/s.*||g' | sed 's\.*, \\g')
 elif [ "$2" == "audio_stream_channels" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Audio -m 1 | sed 's\.*Hz, \\g'| sed 's/\,.*//g') # | sed 's\(.*\\g')
+elif [ "$2" == "audio_stream_sample_fmt" ]; then
+    echo $(cat "$tmpfile22" | grep Stream | grep Audio -m 1 | sed 's\.*Hz, \\g'| sed 's/\,.*//g' | grep Stream | grep Audio | sed 's/.*, //g' | sed 's/ .*//g')
 elif [ "$2" == "overall_duration" ]; then
     echo $(cat "$tmpfile22" | grep Duration -m 1 | sed 's/.*Duration: //g' | sed 's/,//g' | sed 's/ .*//g')
 elif [ "$2" == "overall_bitrate" ]; then
@@ -473,8 +475,16 @@ splitit(){
     scr=$(mktemp tmp.XXXXXXXX)
     tracks=$(cat "$1" | grep "TRACK" -n | sed 's/\:.*//g' | tr -d '\r')
     for tt in $tracks; do
-        startpoint="$(cat "$1" | tail -n +$tt | grep INDEX -n -m 1 | sed 's/.* //g' | tr -d '\r')"
-        endpoint="$(cat "$1" | tail -n +$tt | grep INDEX -n -m 2 | grep -v "$startpoint" | sed 's/.* //g' | tr -d '\r')"
+        startpoint="$(cat "$1" | tail -n +$tt | grep "INDEX 01" -n -m 1 | sed 's/.* //g' | tr -d '\r')"
+        if $(cat "$1" | tail -n +$tt | grep -q 'INDEX 00'); then
+            if [ -z "$endpoint" ]&&[ "$(cat "$1" | tail -n +$tt | grep 'INDEX 00' -n | head -n 1 | sed 's/:.*//g')" -gt "$(cat "$1" | tail -n +$tt | grep 'INDEX 01' -n | head -n 1 | sed 's/:.*//g')" ]; then
+                endpoint="$(cat "$1" | tail -n +$tt | grep "INDEX 00" -n -m 1 | sed 's/.* //g' | tr -d '\r')"
+            else
+                endpoint="$(cat "$1" | tail -n +$tt | grep "INDEX 00" -n -m 2 | tail -n 1 | sed 's/.* //g' | tr -d '\r')"
+            fi
+        else
+            endpoint="$(cat "$1" | tail -n +$tt | grep "INDEX 01" -n -m 2 | grep -v "$startpoint" | sed 's/.* //g' | tr -d '\r')"
+        fi
         eph="$(cat "$1" | tail -n +$tt | grep TRACK -n -m 2 | grep -v "1:" | sed 's/: .*//g' | tr -d '\r')"
         if [ -z "$eph" ]; then eph=$(cat "$1" | tail -n +$tt | wc -l); fi
         trackno="$(cat "$1" | tail -n +$tt | head -n 1 | sed 's/.*TRACK //g' | sed 's/ .*//g' | tr -d '\r')"
@@ -484,14 +494,21 @@ splitit(){
             metatrack+="-metadata title="
             metatrack+='"'"$title"'" '
         fi
-        spms=$(echo $startpoint | sed 's/[0-9][0-9]://g')
-        sp=$((10#$(echo $startpoint | sed "s/:$spms//g" | sed 's/:/*60+10#/g'))).$spms
-        if [ -z "$endpoint" ]; then
-            echo "$ffmpeg" -i '"'$filename'"' -ss $sp $metadata $metatrack '"'"$trackno"_"$title".flac'"' "&" >>$scr
+        spms=$(echo $startpoint | sed 's/.*[0-9][0-9]://g')
+        #sp=$((10#$(echo $startpoint | sed "s/:$spms//g" | sed 's/:/*60+10#/g'))).$spms
+        sp=$((10#$(echo $startpoint | sed "s/.$//g" | sed "s/.$//g" | sed "s/.$//g" | sed 's/:/*60+10#/g'))).$spms
+        if [ ! -z "$endpoint" ]; then
+        #    echo "$ffmpeg" -i '"'$filename'"' -ss $sp $metadata $metatrack '"'"$trackno"_"$(echo $title | sed 's/ /_/g')".flac'"' "&" >>$scr
+        #else
+            epms=$(echo $endpoint | sed 's/.*[0-9][0-9]://g')
+            ep=$((10#$(echo $endpoint | sed "s/.$//g" | sed "s/.$//g" | sed "s/.$//g" | sed 's/:/*60+10#/g'))).$epms
         else
-            epms=$(echo $endpoint | sed 's/[0-9][0-9]://g')
-            ep=$((10#$(echo $endpoint | sed "s/:$epms//g" | sed 's/:/*60+10#/g'))).$epms
-            echo "$ffmpeg" -i '"'$filename'"' -ss $sp -to $ep $metadata $metatrack '"'"$trackno"_"$title".flac'"' "&" >>$scr
+            ep=0
+        fi
+        if [ "$(echo $ep | sed 's/\..*//g')" -lt "$(echo $sp | sed 's/\..*//g')" ]; then
+            echo "$ffmpeg" -i '"'$filename'"' -ss $sp $metadata $metatrack '"'"$trackno"_"$(echo $title | sed 's/ /_/g')".flac'"' "&" >>$scr
+        else
+            echo "$ffmpeg" -i '"'$filename'"' -ss $sp -to $ep $metadata $metatrack '"'"$trackno"_"$(echo $title | sed 's/ /_/g')".flac'"' "&" >>$scr
         fi
     done
     echo wait >>$scr
@@ -1194,7 +1211,11 @@ normalize_it() {
                 $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a aac -b:a "$bitrate"k -movflags +faststart -vn "$outfile"
             #fi
         elif [ "$cod" == "flac" ]; then
-            $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 $copycover "$outfile"
+            if $(echo "$fileprop" | sed 's/.*, //g' | sed 's/ .*//g' | grep -q "s16"); then
+                $ffmpeg -hide_banner -i "$filename" -sample_fmt s16 -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 $copycover "$outfile"
+            else
+                $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -c:a flac -compression_level 8 $copycover "$outfile"
+            fi
         elif [ "$cod" == "wav" ]; then
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar $fr -vn "$outfile"
         else
@@ -1349,8 +1370,10 @@ coverpath=$(find -name "*.*" | sed 's@\.\/@@g' | grep -x --regexp="${filename%.*
 
         if [ "$coverpath" != "" ]; then 
             ## muxing
-            if [ "$cod" != "mka" ]; then
+            if [ "$cod" = "mp3" ]; then
                 $ffmpeg -hide_banner -i "$filename" -i "$coverpath" -map 0:a -c:a copy -map 1 -c copy "$outfile"
+            elif [ "$cod" = "flac" ]; then
+                $ffmpeg -hide_banner -i "$filename" -i "$coverpath" -map 0:a -c:a copy -map 1 -c copy -disposition:1 attached_pic "$outfile"
             else
                 $ffmpeg -hide_banner -i "$filename" -map 0:a -c:a copy -attach "$coverpath" -metadata:s:1 mimetype=image/"$(echo $coverpath | sed 's/.*\.//g' | sed 's/ //g' | sed 's/\(.*\)/\L\1/')" "$outfile"
             fi
