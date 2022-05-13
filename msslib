@@ -90,7 +90,7 @@ fi
 
 ## data extr
 if [ "$2" == "video_streams_count" ]; then
-    cat "$tmpfile22" | grep Stream | grep Video --count
+    cat "$tmpfile22" | grep Stream | grep -v 'attached pic' | grep Video --count
 elif [ "$2" == "audio_streams_count" ]; then
     cat "$tmpfile22" | grep Stream | grep Audio --count
 elif [ "$2" == "subtitle_streams_count" ]; then
@@ -667,8 +667,10 @@ astrem_calc(){
     
     ## fdrc-mode for stereo/mono
     if [ "$astream_ch" == "stereo" ]; then
+    #if $(echo "$astream_ch" | grep -q "stereo"); then
         astream_inputs=2
     elif [ "$astream_ch" == "mono" ]; then
+    #elif $(echo "$astream_ch" | grep -q "mono"); then
         astream_inputs=1
     else
         astream_inputs=$(($(echo $astream_ch | sed 's/(.*//g' | sed 's/\./\+/g')))
@@ -1179,19 +1181,17 @@ normalize_it() {
         if [ "$cod" == "mp3" ]; then
             $ffmpeg -hide_banner -i "$filename" -af volume="$ampl"dB -ar "$fr" -c:a libmp3lame -b:a "$bitrate"k $copycover "$outfile"
         elif [ "$cod" == "vorbis" ] || [ "$cod" == "ogg" ]; then
-            if [ "$bitrate" -le 127 ]; then
-                q=3
-            elif [ "$bitrate" -le 159 ]; then
+            if [ "$bitrate" -le 128 ]; then
                 q=4
-            elif [ "$bitrate" -le 190 ]; then
+            elif [ "$bitrate" -le 160 ]; then
                 q=5
-            elif [ "$bitrate" -le 220 ]; then
+            elif [ "$bitrate" -le 192 ]; then
                 q=6
-            elif [ "$bitrate" -le 250 ]; then
+            elif [ "$bitrate" -le 224 ]; then
                 q=7
-            elif [ "$bitrate" -le 300 ]; then
+            elif [ "$bitrate" -le 256 ]; then
                 q=8
-            elif [ "$bitrate" -le 500 ]; then
+            elif [ "$bitrate" -le 320 ]; then
                 q=9
             else
                 q=10
@@ -1676,8 +1676,8 @@ clear
 check_status(){
                 if [ -z "$(cat "$dialog_exitstatus")" ]; then
                     $dialog --title 'Script termination message' --msgbox 'Nothing specified\nScript terminated'
-                    rm -f $dialog_exitstatus
-                    exit 1
+                    rm -f $dialog_exitstatus $tmpvar34 $tmpvar35
+                    exit 0
                 fi
                 }
 
@@ -1748,9 +1748,17 @@ efs() {
                         echo ",$tmpvar8$(cat $dialog_exitstatus)">$dialog_exitstatus
                     fi
                 fi
-                tmpvar6="$(cat $dialog_exitstatus | sed 's/.*-vf /-vf /g')"
-                tmpvar7+="$(cat $dialog_exitstatus)"
-                tmpvar11+="$(cat $dialog_exitstatus)"
+                tmpvar6="$(cat $dialog_exitstatus)"
+                if $(echo $tmpvar7 | grep -vq --regexp='-vf'); then
+                    tmpvar7+="$(cat $dialog_exitstatus)"
+                    tmpvar11+="$(cat $dialog_exitstatus)"
+                elif $(cat $dialog_exitstatus | grep -vq --regexp='-r '); then
+                    tmpvar7+=",$(cat $dialog_exitstatus | sed 's/-vf//g' | sed 's/ //g')"
+                    tmpvar11+=",$(cat $dialog_exitstatus | sed 's/-vf//g' | sed 's/ //g')"
+                else
+                    tmpvar7+=" $(cat $dialog_exitstatus)"
+                    tmpvar11+=" $(cat $dialog_exitstatus)"
+                fi
                 
                 ## save preset
                 if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != "" ]; then
@@ -1818,7 +1826,7 @@ efs() {
                 
                 echo -c:v $tmpvar8 $(cat $dialog_exitstatus)>$dialog_exitstatus
             fi
-            tmpvar6="$(cat $dialog_exitstatus | sed 's/.*-c:v /-c:v /g')"
+            tmpvar6="$(cat $dialog_exitstatus)"
             tmpvar7+="$(cat $dialog_exitstatus) "
             
             ## save preset
@@ -1879,9 +1887,17 @@ efs() {
                         echo ",$tmpvar8$(cat $dialog_exitstatus)">$dialog_exitstatus
                     fi
                 fi
-                tmpvar6="$(cat $dialog_exitstatus | sed 's/.*-af /-af /g')"
-                tmpvar7+="$(cat $dialog_exitstatus)"
-                tmpvar11+="$(cat $dialog_exitstatus)"
+                tmpvar6="$(cat $dialog_exitstatus)"
+                if $(echo $tmpvar7 | grep -vq --regexp='-af'); then
+                    tmpvar7+="$(cat $dialog_exitstatus)"
+                    tmpvar11+="$(cat $dialog_exitstatus)"
+                elif $(cat $dialog_exitstatus | grep -vq --regexp='-ar '); then
+                    tmpvar7+=",$(cat $dialog_exitstatus | sed 's/-af//g' | sed 's/ //g')"
+                    tmpvar11+=",$(cat $dialog_exitstatus | sed 's/-af//g' | sed 's/ //g')"
+                else
+                    tmpvar7+=" $(cat $dialog_exitstatus)"
+                    tmpvar11+=" $(cat $dialog_exitstatus)"
+                fi
                 
                 ## save preset
                 if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != "" ]; then
@@ -1948,7 +1964,7 @@ efs() {
                 
                 echo -c:a $tmpvar8 $(cat $dialog_exitstatus)>$dialog_exitstatus
             fi
-            tmpvar6="$(cat $dialog_exitstatus | sed 's/.*-c:a /-c:a /g')"
+            tmpvar6="$(cat $dialog_exitstatus)"
             tmpvar7+="$(cat $dialog_exitstatus) "
             
             ## save preset
@@ -2072,18 +2088,22 @@ elif (echo $tmpvar5 | grep -q "fdrch+"); then
     'i: same, but normalize channels individually' \
     'ic: normalize channels individually and light compress to all except LFE' \
     --default '"": compress center channel, other normalize' | sed 's/\:.*//g' >$dialog_exitstatus
-    run_command+="$(cat $dialog_exitstatus) "
+    if [ -z "$(cat $dialog_exitstatus)" ]; then
+        run_command+="'' "
+    else
+        run_command+="$(cat $dialog_exitstatus) "
+    fi
     $dialog --title "Simple pseudo gui of $0 fdrch+" --inputbox "Specify extension(s) for processed files\n\nmkv by default" '' >$dialog_exitstatus
     run_command+="'$(cat $dialog_exitstatus)' " 
     $dialog --title "Simple pseudo gui of $0 fdrch+" --checklist "Specify other parameters"  'f' 'fdrc-mode i.e. force dynamic range high compression to stereo/mono' 'off' \
     's' 'silent progressbar' 'off' >$dialog_exitstatus
-    if $(cat $dialog_exitstatus | grep -q 'f:'); then
+    if $(cat $dialog_exitstatus | grep -q 'f'); then
         run_command+="f "
     else
         run_command+="'' "
     fi
     
-    if $(cat $dialog_exitstatus | grep -q 's:'); then
+    if $(cat $dialog_exitstatus | grep -q 's'); then
         run_command+="s "
     else
         run_command+="'' "
@@ -2157,36 +2177,95 @@ elif (echo $tmpvar5 | grep -q "r2f" ); then
     eval "$run_command"
 elif (echo $tmpvar5 | grep -q "ffmpeg" ); then
     #tmpvar12=$(echo $($ffmpeg -version) | sed 's/ffmpeg version //g')
-    $dialog --title "Simple pseudo gui for system's ffmpeg" --combobox "Full power of ffmpeg can be reached from terminal only.  Local system's ffmpeg ver. is:\n$($ffmpeg -version | sed 's/ffmpeg version //g' | head -n2)" 'simple use'  'multistreams use' --default 'simple use' 1>$dialog_exitstatus
+    $dialog --title "Simple pseudo gui for system's ffmpeg" --combobox "Full power of ffmpeg can be reached from terminal only.  Local system's ffmpeg ver. is:\n$($ffmpeg -version | sed 's/ffmpeg version //g' | head -n2)" 'simple use' 'simple batch'  'multistreams use' --default 'simple use' 1>$dialog_exitstatus
     run_command="$ffmpeg "
     
-    if $(cat $dialog_exitstatus | grep -q 'simple use'); then
-        var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --combobox "Select media file to process" '    
+    if $(cat $dialog_exitstatus | grep -q 'simple'); then
         tmpfile34=$(mktemp XXXXXXXX.tmp)
-        ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' >$tmpfile34
-        for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
-            var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' "
-        done
-        var_len_dialog+=' 1>'"$dialog_exitstatus"
-        eval "$var_len_dialog"
-        check_status
-        run_command+=" -i '$(cat $dialog_exitstatus)' "
         tmpfile35=$(mktemp XXXXXXXX.tmp)
-        $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
-        if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
-            efs vf
-            run_command+=" "
-            efs ve
-            run_command+=" "
-        fi
-        if [ "$(vfpe "$tmpfile35" 'audio_streams_count')" -gt 0 ]; then
-            efs af
-            run_command+=" "
-            efs ae
-            run_command+=" "
-        fi
+        count_lines=0
+        if $(cat $dialog_exitstatus | grep -vq 'batch'); then
+            var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --combobox "Select media file to process" '    
+            ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' | grep --regexp='\.' >$tmpfile34
+            for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
+                var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' "
+                count_lines=$(($count_lines+1))
+            done
+            var_len_dialog+=' 1>'"$dialog_exitstatus"
+            if [ "$count_lines" -eq 0 ]; then
+                $dialog --title "Simple pseudo gui for system's ffmpeg" --msgbox "Seems like no files was found at current dir.\nTerminating now." '' ''
+                rm -f $tmpfile34 $tmpfile35 $dialog_exitstatus
+                exit 0
+            fi
+            eval "$var_len_dialog"
+            check_status
+            run_command+=" -i '$(cat $dialog_exitstatus)' "
+            $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
+            
+            if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
+                efs vf
+                run_command+=" "
+                efs ve
+                run_command+=" "
+            else
+                run_command+=" -vn "
+            fi
+            if [ "$(vfpe "$tmpfile35" 'audio_streams_count')" -gt 0 ]; then
+                efs af
+                run_command+=" "
+                efs ae
+                run_command+=" "
+            fi
         
-        rm -f $tmpfile34 $tmpfile35
+            rm -f $tmpfile34 $tmpfile35
+        else
+            for cyclevar3 in $(ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' | grep --regexp='\.' | sed 's/.*\.//g'); do
+                if $(echo $(cat $tmpfile34) | grep -vq "$cyclevar3"); then
+                    echo "$cyclevar3" >>$tmpfile34
+                    count_lines=$(($count_lines+1))
+                fi
+            done
+            var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --combobox "Select media files type to batch process" '
+            for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
+                var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' "
+            done
+            var_len_dialog+=' 1>'"$dialog_exitstatus"
+            if [ "$count_lines" -eq 0 ]; then
+                $dialog --title "Simple pseudo gui for system's ffmpeg" --msgbox "Seems like no files with extensions was found at current dir.\nTerminating now." '' ''
+                rm -f $tmpfile34 $tmpfile35 $dialog_exitstatus
+                exit 0
+            fi
+            eval "$var_len_dialog"
+            run_command='for cyclevar in *.'"$(cat $dialog_exitstatus) ; do $ffmpeg -i "'"$cyclevar" '
+            check_status
+            for cyclevar3 in *.$(cat $dialog_exitstatus); do
+                $ffmpeg -i "$cyclevar3" -hide_banner 2>$tmpfile35
+                break
+            done
+            
+            if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
+                efs vf
+                run_command+=" "
+                efs ve
+                run_command+=" "
+            else
+                run_command+=" -vn "
+            fi
+            if [ "$(vfpe "$tmpfile35" 'audio_streams_count')" -gt 0 ]; then
+                efs af
+                run_command+=" "
+                efs ae
+                run_command+=" "
+            fi
+        
+            $dialog --title "Simple pseudo gui for system's ffmpeg" --inputbox "Specify output media file extension" ".mkv" 1>$dialog_exitstatus
+            run_command+='"''${cyclevar%.*}'"$(cat $dialog_exitstatus)"'"'' ; done '
+            
+            eval "$run_command"
+            
+            rm -f $tmpfile34 $tmpfile35 $dialog_exitstatus
+            exit 0
+        fi
         
     elif $(cat $dialog_exitstatus | grep -q 'multistreams use'); then
         tmpvar14=1
@@ -2195,7 +2274,7 @@ elif (echo $tmpvar5 | grep -q "ffmpeg" ); then
         while [ "$tmpvar14" -gt 0 ]; do
             var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --combobox "Append media file to process" '" 'done' "    
             tmpfile34=$(mktemp XXXXXXXX.tmp)
-            ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' >$tmpfile34
+            ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' | sed 's/"//g' | grep --regexp='\.' >$tmpfile34
             for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
                 var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' "
             done
@@ -2374,8 +2453,16 @@ efs() {
                     fi
                 fi
                 tmpvar6="$(cat $dialog_exitstatus)"
-                tmpvar7+="$(cat $dialog_exitstatus)"
-                tmpvar11+="$(cat $dialog_exitstatus)"
+                if $(echo $tmpvar7 | grep -vq --regexp='-vf'); then
+                    tmpvar7+="$(cat $dialog_exitstatus)"
+                    tmpvar11+="$(cat $dialog_exitstatus)"
+                elif $(cat $dialog_exitstatus | grep -vq --regexp='-r '); then
+                    tmpvar7+=",$(cat $dialog_exitstatus | sed 's/-vf//g' | sed 's/ //g')"
+                    tmpvar11+=",$(cat $dialog_exitstatus | sed 's/-vf//g' | sed 's/ //g')"
+                else
+                    tmpvar7+=" $(cat $dialog_exitstatus)"
+                    tmpvar11+=" $(cat $dialog_exitstatus)"
+                fi
                 
                 ## save preset
                 if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != "" ]; then
@@ -2497,8 +2584,16 @@ efs() {
                     fi
                 fi
                 tmpvar6="$(cat $dialog_exitstatus)"
-                tmpvar7+="$(cat $dialog_exitstatus)"
-                tmpvar11+="$(cat $dialog_exitstatus)"
+                if $(echo $tmpvar7 | grep -vq --regexp='-af'); then
+                    tmpvar7+="$(cat $dialog_exitstatus)"
+                    tmpvar11+="$(cat $dialog_exitstatus)"
+                elif $(cat $dialog_exitstatus | grep -vq --regexp='-ar '); then
+                    tmpvar7+=",$(cat $dialog_exitstatus | sed 's/-af//g' | sed 's/ //g')"
+                    tmpvar11+=",$(cat $dialog_exitstatus | sed 's/-af//g' | sed 's/ //g')"
+                else
+                    tmpvar7+=" $(cat $dialog_exitstatus)"
+                    tmpvar11+=" $(cat $dialog_exitstatus)"
+                fi
                 
                 ## save preset
                 if [ "$tmpvar6" != " " ] || [ "$tmpvar6" != "" ]; then
@@ -2782,35 +2877,94 @@ elif [ "$(echo $tmpvar5)" == "r2f" ]; then
     eval "$run_command"
 elif [ "$(echo $tmpvar5)" == "ffmpeg" ]; then
     tmpvar12=$(echo $($ffmpeg -version) | sed 's/ffmpeg version //g')
-    $dialog --title "Simple pseudo gui for system's ffmpeg" --no-cancel --radiolist "Full power of ffmpeg available from terminal only.  Local system's ffmpeg ver. is:\n$(echo -e ${tmpvar12:0:80}"\n"${tmpvar12:80:80}"\n"${tmpvar12:160:80}"\n"${tmpvar12:240:80}"\n"${tmpvar12:320:80}"\n"${tmpvar12:400:80}"\n"${tmpvar12:480:80}"\n"${tmpvar12:560:80}"\n"${tmpvar12:640:80}"\n"${tmpvar12:720:80}"\n"${tmpvar12:800:80}"\n"${tmpvar12:880:80}"\n"${tmpvar12:960:80}"\n"${tmpvar12:1040:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1200:80}"\n"${tmpvar12:1280:80})" '38' '100' '' 'simple use' '' 'on' 'multistreams use' '' '' 2>$dialog_exitstatus
+    $dialog --title "Simple pseudo gui for system's ffmpeg" --no-cancel --radiolist "Full power of ffmpeg available from terminal only.  Local system's ffmpeg ver. is:\n$(echo -e ${tmpvar12:0:80}"\n"${tmpvar12:80:80}"\n"${tmpvar12:160:80}"\n"${tmpvar12:240:80}"\n"${tmpvar12:320:80}"\n"${tmpvar12:400:80}"\n"${tmpvar12:480:80}"\n"${tmpvar12:560:80}"\n"${tmpvar12:640:80}"\n"${tmpvar12:720:80}"\n"${tmpvar12:800:80}"\n"${tmpvar12:880:80}"\n"${tmpvar12:960:80}"\n"${tmpvar12:1040:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1120:80}"\n"${tmpvar12:1200:80}"\n"${tmpvar12:1280:80})" '40' '100' '' 'simple use' '' 'on' 'simple batch' '' '' 'multistreams use' '' '' 2>$dialog_exitstatus
     run_command="$ffmpeg "
     
-    if $(cat $dialog_exitstatus | grep -q 'simple use'); then
-        var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --no-cancel --radiolist "Select media file to process" '"'38' '100' '' "    
+    if $(cat $dialog_exitstatus | grep -q 'simple'); then
         tmpfile34=$(mktemp XXXXXXXX.tmp)
-        ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' >$tmpfile34
-        for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
-            var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' '' '' "
-        done
-        var_len_dialog+=' 2>'"$dialog_exitstatus"
-        eval "$var_len_dialog"
-        run_command+=" -i '$(cat $dialog_exitstatus)' "
         tmpfile35=$(mktemp XXXXXXXX.tmp)
-        $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
-        if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
-            efs vf
-            run_command+=" "
-            efs ve
-            run_command+=" "
-        fi
-        if [ "$(vfpe "$tmpfile35" 'audio_streams_count')" -gt 0 ]; then
-            efs af
-            run_command+=" "
-            efs ae
-            run_command+=" "
-        fi
+        count_lines=0
+        if $(cat $dialog_exitstatus | grep -vq 'batch'); then
+            var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --no-cancel --radiolist "Select media file to process" '"'38' '100' '' "    
+            ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' | grep --regexp='\.' >$tmpfile34
+            for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
+                var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' '' '' "
+                count_lines=$(($count_lines+1))
+            done
+            var_len_dialog+=' 2>'"$dialog_exitstatus"
+            if [ "$count_lines" -eq 0 ]; then
+                $dialog --title "Simple pseudo gui for system's ffmpeg" --no-cancel --msgbox "Seems like no files was found at current dir.\nTerminating now." '' ''
+                rm -f $tmpfile34 $tmpfile35 $dialog_exitstatus
+                exit 0
+            fi
+            eval "$var_len_dialog"
+            run_command+=" -i '$(cat $dialog_exitstatus)' "
+            $ffmpeg -i "$(cat $dialog_exitstatus)" -hide_banner 2>$tmpfile35
+            
+            if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
+                efs vf
+                run_command+=" "
+                efs ve
+                run_command+=" "
+            else
+                run_command+=" -vn "
+            fi
+            if [ "$(vfpe "$tmpfile35" 'audio_streams_count')" -gt 0 ]; then
+                efs af
+                run_command+=" "
+                efs ae
+                run_command+=" "
+            fi
         
-        rm -f $tmpfile34 $tmpfile35
+            rm -f $tmpfile34 $tmpfile35
+            
+        else
+            for cyclevar3 in $(ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' | grep --regexp='\.' | sed 's/.*\.//g'); do
+                if $(echo $(cat $tmpfile34) | grep -vq "$cyclevar3"); then
+                    echo "$cyclevar3" >>$tmpfile34
+                    count_lines=$(($count_lines+1))
+                fi
+            done
+            var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --no-cancel --radiolist "Select media files type to batch process" '"'38' '100' '' "    
+            for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
+                var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' '' '' "
+            done
+            var_len_dialog+=' 2>'"$dialog_exitstatus"
+            if [ "$count_lines" -eq 0 ]; then
+                $dialog --title "Simple pseudo gui for system's ffmpeg" --no-cancel --msgbox "Seems like no files with extensions was found at current dir.\nTerminating now." '' ''
+                rm -f $tmpfile34 $tmpfile35 $dialog_exitstatus
+                exit 0
+            fi
+            eval "$var_len_dialog"
+            run_command='for cyclevar in *.'"$(cat $dialog_exitstatus) ; do $ffmpeg -i "'"$cyclevar" '
+            for cyclevar3 in *.$(cat $dialog_exitstatus); do
+                $ffmpeg -i "$cyclevar3" -hide_banner 2>$tmpfile35
+                break
+            done
+            
+            if [ "$(vfpe "$tmpfile35" 'video_streams_count')" -gt 0 ]; then
+                efs vf
+                run_command+=" "
+                efs ve
+                run_command+=" "
+            else
+                run_command+=" -vn "
+            fi
+            if [ "$(vfpe "$tmpfile35" 'audio_streams_count')" -gt 0 ]; then
+                efs af
+                run_command+=" "
+                efs ae
+                run_command+=" "
+            fi
+        
+            $dialog --title "Simple pseudo gui for system's ffmpeg" --no-cancel --inputbox "Specify output media file extension" '7' '100' ".mkv" 2>$dialog_exitstatus
+            run_command+='"''${cyclevar%.*}'"$(cat $dialog_exitstatus)"'"'' ; done '
+            
+            eval "$run_command"
+            
+            rm -f $tmpfile34 $tmpfile35 $dialog_exitstatus
+            exit 0
+        fi
         
     elif $(cat $dialog_exitstatus | grep -q 'multistreams use'); then
         tmpvar14=1
@@ -2819,7 +2973,7 @@ elif [ "$(echo $tmpvar5)" == "ffmpeg" ]; then
         while [ "$tmpvar14" -gt 0 ]; do
             var_len_dialog="$dialog --title "'"Simple pseudo gui for system'"'"'s ffmpeg" --no-cancel --radiolist "Append media file to process" '"'38' '100' '' 'done' ' of files append' 'on' "    
             tmpfile34=$(mktemp XXXXXXXX.tmp)
-            ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' >$tmpfile34
+            ls -1 --hide=*.tmp --hide=$(echo $0 | sed 's|./||g') | sed "s/'//g" | sed 's/"//g' | sed 's/"//g' | grep --regexp='\.' >$tmpfile34
             for ((cyclevar3=1;cyclevar3<=$(wc -l $tmpfile34 | sed 's/ .*//g');cyclevar3+=1)); do
                 var_len_dialog+="'$(cat $tmpfile34 | head -n +$cyclevar3 | tail -n 1)' '' '' "
             done
@@ -2932,38 +3086,38 @@ eval $exefunc
 ## video encoder slot 1 -c:v libx264 -crf 20
 ## video encoder slot 2 -c:v h264_nvenc -b:v 2M
 ## video encoder slot 3 -c:v libx265 -crf 22 -x265-params psy-rd=0.00
-## video encoder slot 4 -c:v copy 
-## video encoder slot 5 
-## video encoder slot 6 
+## video encoder slot 4 -c:v libxvid -b:v 2M
+## video encoder slot 5 -c:v libvpx -b:v 2M
+## video encoder slot 6 -c:v av1 -b:v 2M
 ## video encoder slot 7 
-## video encoder slot 8 
-##
+## video encoder slot 8 -c:v copy 
+## 
 ## video filter slot 1 -vf deblock=block=4,fftdnoiz=sigma=13,eq=contrast=1.05,cas=strength=0.2
 ## video filter slot 2 -vf  deblock,atadenoise=s=21,fftdnoiz=sigma=13,unsharp=luma_amount=-0.15:la=-0.15:chroma_amount=5:ca=5,eq=contrast=1.13
-## video filter slot 3 
-## video filter slot 4 
-## video filter slot 5 
-## video filter slot 6 
-## video filter slot 7 
-## video filter slot 8 
+## video filter slot 3 -vf scale=w=1280:h=720:flags=bicublin
+## video filter slot 4 -vf scale=h=720:force_original_aspect_ratio=decrease:flags=fast_bilinear
+## video filter slot 5 -vf scale=w=1280:h=720:flags=bicublin,setsar=sar=1/1,setdar=dar=16/9
+## video filter slot 6 -vf format=nv12
+## video filter slot 7 -r 30
+## video filter slot 8 -vf minterpolate=mi_mode=mci:mc_mode=aobmc
 ##
-## audio encoder slot 1 -c:a copy 
-## audio encoder slot 2 -c:a aac -b:a 320k
+## audio encoder slot 1 -c:a libmp3lame -b:a 320k
+## audio encoder slot 2 -c:a aac -b:a 256k
 ## audio encoder slot 3 -c:a libvorbis -aq 5
-## audio encoder slot 4 
-## audio encoder slot 5 
-## audio encoder slot 6 
+## audio encoder slot 4 -c:a libopus -b:a 256k
+## audio encoder slot 5 -c:a ac3 -b:a 512k
+## audio encoder slot 6 -c:a flac
 ## audio encoder slot 7 
-## audio encoder slot 8 
+## audio encoder slot 8 -c:a copy 
 ##
 ## audio filter slot 1 -af  acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB
-## audio filter slot 2 
-## audio filter slot 3 
-## audio filter slot 4 
-## audio filter slot 5 
+## audio filter slot 2 -af superequalizer=1b=0.001:2b=0.001 
+## audio filter slot 3 -af speechnorm
+## audio filter slot 4 -af loudnorm 
+## audio filter slot 5 -af dynaudnorm
 ## audio filter slot 6 
 ## audio filter slot 7 
-## audio filter slot 8 
+## audio filter slot 8 -ar 48000 
 ##
 ############################
 ## end
