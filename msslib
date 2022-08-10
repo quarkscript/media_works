@@ -109,11 +109,11 @@ elif [ "$2" == "video_stream_starts" ]; then
 elif [ "$2" == "audio_stream_starts" ]; then
     echo $(cat "$tmpfile22" | grep Stream -n | grep Audio | sed 's/\:.*//g')
 elif [ "$2" == "video_stream_id" ]; then
-    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's\.*#0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g')
+    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's\.*#0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g' | sed 's/\[.*//g')
 elif [ "$2" == "video_stream_codec" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's\.*Video: \\g' | sed 's/ .*//g' | sed 's/,.*//g')
 elif [ "$2" == "video_stream_width" ]; then
-    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/x[1-9][0-9].*//g' | sed 's/x[1-9][0-9][0-9].*//g' | sed 's/x[1-9][0-9][0-9][0-9].*//g' | sed 's/.* //g' | sed 's/ .*//g' | sed 's/,//g')
+    echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1  | sed 's/x[1-9][0-9][0-9][0-9] .*//g' | sed 's/x[1-9][0-9][0-9] .*//g' | sed 's/x[1-9][0-9] .*//g'| sed 's/.* //g' | sed 's/ .*//g' | sed 's/,//g')
 elif [ "$2" == "video_stream_heigh" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/.* [1-9][0-9]x//g' | sed 's/.* [1-9][0-9][0-9]x//g' | sed 's/.* [1-9][0-9][0-9][0-9]x//g' | sed 's/ .*//g' | sed 's/ .*//g' | sed 's/,//g')
 elif [ "$2" == "video_stream_fps" ]; then
@@ -121,7 +121,7 @@ elif [ "$2" == "video_stream_fps" ]; then
 elif [ "$2" == "video_stream_bitrate" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Video -m 1 | sed 's/ kb\/s.*//g' | sed 's/.* //g')
 elif [ "$2" == "audio_stream_id" ]; then
-    echo $(cat "$tmpfile22" | grep Stream | grep Audio -m 1 | sed 's\.*#0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g')
+    echo $(cat "$tmpfile22" | grep Stream | grep Audio -m 1 | sed 's\.*#0:\\g' | sed 's\(.*\\g' | sed 's/: .*//g' | sed 's/\[.*//g')
 elif [ "$2" == "audio_stream_codec" ]; then
     echo $(cat "$tmpfile22" | grep Stream | grep Audio -m 1 | sed 's\.*Audio: \\g' | sed 's\,.*\\g' | sed 's\ (.*\\g')
 elif [ "$2" == "audio_stream_freq" ]; then
@@ -489,7 +489,7 @@ splitit(){
         if [ -z "$eph" ]; then eph=$(cat "$1" | tail -n +$tt | wc -l); fi
         trackno="$(cat "$1" | tail -n +$tt | head -n 1 | sed 's/.*TRACK //g' | sed 's/ .*//g' | tr -d '\r')"
         metatrack="-metadata track=$trackno "
-        title="$(cat "$1" | tail -n +$tt | head -n "$eph" | grep TITLE | sed 's/.*TITLE //g' | sed 's/"//g' | tr -d '\r')"
+        title="$(cat "$1" | tail -n +$tt | head -n "$eph" | grep -a TITLE | sed 's/.*TITLE //g' | sed 's/"//g' | sed 's/`/@/g' | sed "s/@/'/g" | tr -d '\r')"
         if [ -n "title" ]; then 
             metatrack+="-metadata title="
             metatrack+='"'"$title"'" '
@@ -505,7 +505,8 @@ splitit(){
         else
             ep=0
         fi
-        if [ "$(echo $ep | sed 's/\..*//g')" -lt "$(echo $sp | sed 's/\..*//g')" ]; then
+        if [ "$(echo $ep | sed 's/\..*//g')" -le "$(echo $sp | sed 's/\..*//g')" ]; then
+        # was -lt, now -le
             echo "$ffmpeg" -i '"'$filename'"' -ss $sp $metadata $metatrack '"'"$trackno"_"$(echo $title | sed 's/ /_/g')".flac'"' "&" >>$scr
         else
             echo "$ffmpeg" -i '"'$filename'"' -ss $sp -to $ep $metadata $metatrack '"'"$trackno"_"$(echo $title | sed 's/ /_/g')".flac'"' "&" >>$scr
@@ -1326,8 +1327,13 @@ art_it() {
         filename=$(head -n $cycle_list $1 2>&1 | tail -n 1)
         if [ ! -z "$2" ]; then
             cod=$2
-        elif $(echo $filename | sed 's/.*\.//g' | grep -q --regexp='mp3' --regexp='flac'); then
-            cod="$(echo $filename | sed 's/.*\.//g' | sed 's/ //g')"
+#         elif $(echo $filename | sed 's/.*\.//g' | grep -q --regexp='mp3' --regexp='flac'); then
+#             cod="$(echo $filename | sed 's/.*\.//g' | sed 's/ //g')"
+## in some encodings it leads to fails
+        elif $(echo $filename | sed 's/.*\.//g' | grep -q --regexp='mp3'); then
+            cod=mp3
+        elif $(echo $filename | sed 's/.*\.//g' | grep -q --regexp='flac'); then
+            cod=flac
         else
             cod='mka'
         fi
@@ -3084,7 +3090,7 @@ eval $exefunc
 ############################
 ##
 ## video encoder slot 1 -c:v libx264 -crf 20
-## video encoder slot 2 -c:v h264_nvenc -b:v 2M
+## video encoder slot 2 -c:v h264_nvenc -b:v 2M -preset p7 -coder cabac -rc-lookahead 90
 ## video encoder slot 3 -c:v libx265 -crf 22 -x265-params psy-rd=0.00
 ## video encoder slot 4 -c:v libxvid -b:v 2M
 ## video encoder slot 5 -c:v libvpx -b:v 2M
@@ -3110,12 +3116,12 @@ eval $exefunc
 ## audio encoder slot 7 
 ## audio encoder slot 8 -c:a copy 
 ##
-## audio filter slot 1 -af  acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB
+## audio filter slot 1 -af acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB
 ## audio filter slot 2 -af superequalizer=1b=0.001:2b=0.001 
 ## audio filter slot 3 -af speechnorm
 ## audio filter slot 4 -af loudnorm 
 ## audio filter slot 5 -af dynaudnorm
-## audio filter slot 6 
+## audio filter slot 6  -af superequalizer=1b=0.001:2b=0.001,acompressor=link=maximum:ratio=10:attack=0.2:release=2000:detection=peak:threshold=-20dB
 ## audio filter slot 7 
 ## audio filter slot 8 -ar 48000 
 ##
